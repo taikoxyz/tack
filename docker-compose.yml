@@ -1,0 +1,40 @@
+services:
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: ipfs-kubo
+    ports:
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs_staging:/export
+      - ipfs_data:/data/ipfs
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tack-api
+    depends_on:
+      - ipfs
+    environment:
+      PORT: "3000"
+      IPFS_API_URL: "http://ipfs:5001"
+      DATABASE_PATH: "/app/data/tack.db"
+      DELEGATE_URL: "http://ipfs:8080/ipfs"
+      X402_ENABLED: "false"
+      X402_FACILITATOR_URL: "https://facilitator.x402.org"
+      X402_NETWORK: "eip155:167000"
+      X402_PAY_TO: "0x0000000000000000000000000000000000000001"
+      X402_USDC_ASSET_ADDRESS: "0x0000000000000000000000000000000000000001"
+      X402_USDC_ASSET_DECIMALS: "6"
+      X402_BASE_PRICE_USD: "0.001"
+      X402_PRICE_PER_MB_USD: "0.001"
+      X402_MAX_PRICE_USD: "0.01"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  ipfs_staging:
+  ipfs_data:

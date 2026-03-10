@@ -1,0 +1,100 @@
+# Railway Deployment Baseline (API + Kubo + Persistent Storage)
+
+This baseline is the first production path for Tack on Railway with Taiko Alethia x402 payments.
+
+## Target Topology
+
+Deploy two Railway services in one project:
+
+1. `tack-api` (this repo, Dockerfile build)
+2. `tack-ipfs` (`ipfs/kubo:latest` image)
+
+Persistent volumes:
+
+- `tack-api` volume mounted at `/app/data` for SQLite.
+- `tack-ipfs` volume mounted at `/data/ipfs` for Kubo datastore.
+
+## 1) Create Railway Services
+
+### `tack-api`
+
+- Source: this repository root.
+- Build: Dockerfile (`railway.json` included in repo).
+- Start command: `node dist/index.js`.
+- Health check path: `/health`.
+- Replicas: `1` (required while using SQLite file storage).
+
+### `tack-ipfs`
+
+- Source: deploy from image `ipfs/kubo:latest`.
+- Internal port for RPC: `5001`.
+- Optional public port for gateway: `8080` (only if you want direct gateway access).
+- Mount persistent volume at `/data/ipfs`.
+
+## 2) Required Environment Variables (`tack-api`)
+
+Set these in Railway Variables.
+
+| Variable | Value / Example | Notes |
+| --- | --- | --- |
+| `PORT` | `3000` | Railway routes traffic to this port. |
+| `IPFS_API_URL` | `http://tack-ipfs.railway.internal:5001` | Use your internal service hostname from Railway networking. |
+| `DATABASE_PATH` | `/app/data/tack.db` | Must be on the mounted persistent volume. |
+| `DELEGATE_URL` | `https://<ipfs-gateway-domain>/ipfs` | Returned in pin delegates metadata. |
+| `TRUST_PROXY` | `true` | Railway terminates edge traffic before your service. |
+| `WALLET_AUTH_TOKEN_SECRET` | long random secret | Required for owner `Authorization: Bearer` flows. |
+| `X402_ENABLED` | `true` | Required for production startup checks. |
+| `X402_FACILITATOR_URL` | `https://facilitator.x402.org` | x402 facilitator endpoint. |
+| `X402_NETWORK` | `eip155:167000` | Taiko Alethia. |
+| `X402_PAY_TO` | `0x...` treasury wallet | Must be a real address (no placeholders). |
+| `X402_USDC_ASSET_ADDRESS` | `0x...` Taiko USDC | Must be a real token address (no placeholders). |
+| `X402_USDC_ASSET_DECIMALS` | `6` | USDC decimals. |
+| `X402_BASE_PRICE_USD` | `0.001` | Base operation price. |
+| `X402_PRICE_PER_MB_USD` | `0.001` | Variable price by payload size. |
+| `X402_MAX_PRICE_USD` | `0.01` | Price ceiling per request. |
+
+## 3) Persistent Storage Strategy
+
+- Keep SQLite at `/app/data/tack.db` on Railway volume.
+- Run API with a single replica to avoid SQLite file locking/consistency issues.
+- Keep Kubo data on a dedicated volume (`/data/ipfs`) so pins survive redeploys.
+- Snapshot backup before risky changes:
+  - copy `/app/data/tack.db`
+  - export Kubo repo snapshot from `/data/ipfs`
+
+## 4) Health Checks and Runtime Validation
+
+- Railway health check uses `GET /health`.
+- `200` means API is up and Kubo RPC is reachable.
+- `503` means degraded state (`ipfs` dependency unreachable).
+
+Post-deploy checks:
+
+1. `GET /health` returns `200`.
+2. `POST /pins` without payment returns `402`.
+3. Paid retry with `payment-signature` returns `202`.
+
+Use the full smoke runbook: [deployment-smoke.md](./deployment-smoke.md).
+
+## 5) Rollback Notes
+
+When a release causes issues:
+
+1. Roll back `tack-api` to the previous Railway deployment.
+2. Keep volumes attached; do not delete `tack.db` or Kubo volume.
+3. If breakage is env-related (x402 wallet/asset/network), revert variables and redeploy.
+4. If a data migration or write-path bug corrupted SQLite, restore `tack.db` from backup snapshot.
+5. If Kubo regresses, roll back `tack-ipfs` service separately.
+
+## 6) Taiko + x402 Go-Live Checklist
+
+1. API and Kubo services both healthy in Railway.
+2. API and Kubo persistent volumes attached and non-empty after a redeploy.
+3. `X402_ENABLED=true` and `X402_NETWORK=eip155:167000`.
+4. `X402_PAY_TO` and `X402_USDC_ASSET_ADDRESS` are real Taiko Alethia addresses.
+5. `WALLET_AUTH_TOKEN_SECRET` is set to a strong random value.
+6. `TRUST_PROXY=true` configured.
+7. `/health` stable at `200` over repeated checks.
+8. End-to-end smoke passes (`pnpm smoke:x402`) against Railway URL.
+9. Manual pin/list/get/delete flow works with paid wallet identity.
+10. Rollback owner and backup location documented before launch.

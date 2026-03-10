@@ -1,0 +1,65 @@
+name: x402-taiko-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'Base URL for deployed Tack API (example: https://tack.example.com)'
+        required: true
+        type: string
+      rpc_url:
+        description: 'Taiko Alethia RPC URL'
+        required: false
+        default: 'https://rpc.mainnet.taiko.xyz'
+        type: string
+      chain_id:
+        description: 'Expected EVM chain ID'
+        required: false
+        default: '167000'
+        type: string
+      cid:
+        description: 'CID used for POST /pins smoke request'
+        required: false
+        default: 'bafkreiabfiu4ij6y7h5xj4yx4f2x7v2m2w6w63s3u5xyd4uxw5k2j7f7de'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate required secret
+        env:
+          SMOKE_PAYER_PRIVATE_KEY: ${{ secrets.X402_SMOKE_PAYER_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SMOKE_PAYER_PRIVATE_KEY" ]; then
+            echo "::error::Missing secret X402_SMOKE_PAYER_PRIVATE_KEY"
+            exit 1
+          fi
+
+      - name: Run x402 smoke flow
+        env:
+          SMOKE_API_BASE_URL: ${{ inputs.api_base_url }}
+          SMOKE_RPC_URL: ${{ inputs.rpc_url }}
+          SMOKE_CHAIN_ID: ${{ inputs.chain_id }}
+          SMOKE_CID: ${{ inputs.cid }}
+          SMOKE_PAYER_PRIVATE_KEY: ${{ secrets.X402_SMOKE_PAYER_PRIVATE_KEY }}
+        run: pnpm smoke:x402
