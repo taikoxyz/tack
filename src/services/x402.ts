@@ -379,12 +379,16 @@ export function createX402PaymentMiddleware(
   const retrievalResolver = options?.resolveRetrievalPayment;
   const facilitator = facilitatorClient ?? new HTTPFacilitatorClient({ url: config.facilitatorUrl });
   const resourceServer = new x402ResourceServer(facilitator).register(config.network, new ExactEvmScheme());
+  const exactTransferExtra = {
+    assetTransferMethod: 'permit2'
+  } as const;
   const routes: RoutesConfig = {
     'POST /pins': {
       accepts: {
         scheme: 'exact',
         network: config.network,
         payTo: config.payTo,
+        extra: exactTransferExtra,
         price: async (context: HTTPRequestContext) => {
           const sizeBytes = await resolvePinRequestSizeBytes(context);
           const usdPrice = calculatePriceUsd(sizeBytes, config);
@@ -399,6 +403,7 @@ export function createX402PaymentMiddleware(
         scheme: 'exact',
         network: config.network,
         payTo: config.payTo,
+        extra: exactTransferExtra,
         price: (context: HTTPRequestContext) => {
           const sizeBytes = resolveUploadSizeBytes(context);
           const usdPrice = calculatePriceUsd(sizeBytes, config);
@@ -415,6 +420,7 @@ export function createX402PaymentMiddleware(
       accepts: {
         scheme: 'exact',
         network: config.network,
+        extra: exactTransferExtra,
         payTo: async (context: HTTPRequestContext) => {
           const requirement = await resolveRetrievalRequirement(context, retrievalResolver);
           return requirement?.payTo ?? config.payTo;

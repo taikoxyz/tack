@@ -17,6 +17,7 @@ services:
     depends_on:
       - ipfs
     environment:
+      NODE_ENV: "development"
       PORT: "3000"
       IPFS_API_URL: "http://ipfs:5001"
       DATABASE_PATH: "/app/data/tack.db"
