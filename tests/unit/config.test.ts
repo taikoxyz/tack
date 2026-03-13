@@ -78,6 +78,15 @@ describe('config validation', () => {
     expect(config.pinReplicaDelegateUrls).toEqual(['https://gw-a.example/ipfs', 'https://gw-b.example/ipfs']);
   });
 
+  it('parses PUBLIC_BASE_URL as an origin', () => {
+    setTestEnv({
+      PUBLIC_BASE_URL: 'https://api.tack.example/'
+    });
+
+    const config = getConfig();
+    expect(config.publicBaseUrl).toBe('https://api.tack.example');
+  });
+
   it('fails when replica delegate URLs do not match replica API URL count', () => {
     setTestEnv({
       PIN_REPLICA_IPFS_API_URLS: 'http://ipfs-a:5001,http://ipfs-b:5001',
@@ -87,5 +96,13 @@ describe('config validation', () => {
     expect(() => getConfig()).toThrow(
       'PIN_REPLICA_DELEGATE_URLS must have the same number of entries as PIN_REPLICA_IPFS_API_URLS'
     );
+  });
+
+  it('rejects PUBLIC_BASE_URL values with paths', () => {
+    setTestEnv({
+      PUBLIC_BASE_URL: 'https://api.tack.example/v1'
+    });
+
+    expect(() => getConfig()).toThrow('PUBLIC_BASE_URL must be an origin without path, query, or hash');
   });
 });

@@ -366,6 +366,27 @@ describe('API integration', () => {
     expect(agentCard.endpoint).toBe('https://tack-api-production.up.railway.app');
   });
 
+  it('prefers PUBLIC_BASE_URL for the AgentCard over forwarded headers', async () => {
+    const publicBaseUrlApp = createApp({
+      pinningService: service,
+      publicBaseUrl: 'https://api.tack.example',
+      trustProxy: true
+    });
+
+    const response = await publicBaseUrlApp.request(
+      new Request('http://localhost/.well-known/agent.json', {
+        headers: {
+          'x-forwarded-host': 'internal-only.example',
+          'x-forwarded-proto': 'http'
+        }
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const agentCard = (await response.json()) as { endpoint: string };
+    expect(agentCard.endpoint).toBe('https://api.tack.example');
+  });
+
   it('rejects uploads over configured upload size limit', async () => {
     const strictApp = createApp({ pinningService: service, uploadMaxSizeBytes: 4 });
     const form = new FormData();

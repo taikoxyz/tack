@@ -1,3 +1,15 @@
+import type { MiddlewareHandler } from 'hono';
+
+export interface ExternalRequestUrlOptions {
+  publicBaseUrl?: string;
+  trustProxy?: boolean;
+}
+
+interface MutableRequestUrl {
+  raw: Request;
+  url: string;
+}
+
 function getFirstHeaderValue(value: string | null): string | null {
   if (!value) {
     return null;
@@ -35,14 +47,14 @@ function parseForwardedHeader(value: string | null): { host: string | null; prot
     }
 
     const key = rawKey.trim().toLowerCase();
-    const value = stripQuotes(rawValue.trim());
+    const parsedValue = stripQuotes(rawValue.trim());
 
-    if (key === 'host' && value.length > 0) {
-      host = value;
+    if (key === 'host' && parsedValue.length > 0) {
+      host = parsedValue;
     }
 
     if (key === 'proto') {
-      const normalized = value.toLowerCase();
+      const normalized = parsedValue.toLowerCase();
       if (isTrustedProtocol(normalized)) {
         proto = normalized;
       }
@@ -52,26 +64,64 @@ function parseForwardedHeader(value: string | null): { host: string | null; prot
   return { host, proto };
 }
 
-export function getExternalRequestUrl(requestUrl: string, headers: Headers, trustProxy: boolean): URL {
+function parseForwardedPort(value: string | null): string | null {
+  const port = getFirstHeaderValue(value);
+  return port && /^[0-9]+$/.test(port) ? port : null;
+}
+
+function applyOrigin(url: URL, origin: URL): URL {
+  url.protocol = origin.protocol;
+  url.host = origin.host;
+  return url;
+}
+
+function applyForwardedHost(url: URL, forwardedHost: string): boolean {
+  try {
+    const parsed = new URL(`${url.protocol}//${forwardedHost}`);
+    if (
+      parsed.username.length > 0 ||
+      parsed.password.length > 0 ||
+      parsed.pathname !== '/' ||
+      parsed.search.length > 0 ||
+      parsed.hash.length > 0
+    ) {
+      return false;
+    }
+
+    url.hostname = parsed.hostname;
+    url.port = parsed.port;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getExternalRequestUrl(requestUrl: string, headers: Headers, options?: ExternalRequestUrlOptions): URL {
   const url = new URL(requestUrl);
-  if (!trustProxy) {
+
+  if (options?.publicBaseUrl) {
+    return applyOrigin(url, new URL(options.publicBaseUrl));
+  }
+
+  if (!options?.trustProxy) {
     return url;
   }
 
   const forwarded = parseForwardedHeader(headers.get('forwarded'));
   const forwardedHost = forwarded.host ?? getFirstHeaderValue(headers.get('x-forwarded-host'));
+  const forwardedPort = parseForwardedPort(headers.get('x-forwarded-port'));
   const forwardedProto = forwarded.proto ?? (() => {
     const proto = getFirstHeaderValue(headers.get('x-forwarded-proto'))?.toLowerCase() ?? null;
     return isTrustedProtocol(proto) ? proto : null;
   })();
 
   if (forwardedHost) {
-    url.host = forwardedHost;
-  } else {
-    const forwardedPort = getFirstHeaderValue(headers.get('x-forwarded-port'));
-    if (forwardedPort && /^[0-9]+$/.test(forwardedPort)) {
+    const appliedHost = applyForwardedHost(url, forwardedHost);
+    if (appliedHost && forwardedPort && url.port.length === 0) {
       url.port = forwardedPort;
     }
+  } else if (forwardedPort) {
+    url.port = forwardedPort;
   }
 
   if (forwardedProto) {
@@ -81,6 +131,23 @@ export function getExternalRequestUrl(requestUrl: string, headers: Headers, trus
   return url;
 }
 
-export function getExternalOrigin(requestUrl: string, headers: Headers, trustProxy: boolean): string {
-  return getExternalRequestUrl(requestUrl, headers, trustProxy).origin;
+export function normalizeExternalRequestUrl(request: MutableRequestUrl, headers: Headers, options?: ExternalRequestUrlOptions): string {
+  const externalUrl = getExternalRequestUrl(request.url, headers, options).toString();
+
+  if (externalUrl !== request.url) {
+    Object.defineProperty(request.raw, 'url', {
+      value: externalUrl,
+      configurable: true,
+      writable: true
+    });
+  }
+
+  return externalUrl;
+}
+
+export function createExternalRequestUrlMiddleware(options?: ExternalRequestUrlOptions): MiddlewareHandler {
+  return async (c, next) => {
+    normalizeExternalRequestUrl(c.req, c.req.raw.headers, options);
+    await next();
+  };
 }

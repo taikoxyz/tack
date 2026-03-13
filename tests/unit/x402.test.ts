@@ -4,6 +4,7 @@ import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePayment
 import type { FacilitatorClient } from '@x402/core/server';
 import type { PaymentPayload, PaymentRequirements } from '@x402/core/types';
 import { describe, expect, it } from 'vitest';
+import { createExternalRequestUrlMiddleware } from '../../src/lib/request-url';
 import { calculatePriceUsd, createX402PaymentMiddleware, resolveWalletFromHeaders, type X402PaymentConfig } from '../../src/services/x402';
 
 const testConfig: X402PaymentConfig = {
@@ -206,18 +207,17 @@ describe('x402 middleware', () => {
     expect(settlement.network).toBe(testConfig.network);
   });
 
-  it('uses forwarded host and proto in payment requirements when trustProxy is enabled', async () => {
+  it('uses the normalized public URL in payment requirements', async () => {
     const app = new Hono();
-    app.use(createX402PaymentMiddleware(testConfig, mockFacilitator, { trustProxy: true }));
+    app.use(createExternalRequestUrlMiddleware({ publicBaseUrl: 'https://tack-api-production.up.railway.app' }));
+    app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
     app.post('/pins', (c) => c.json({ ok: true }));
 
     const unpaid = await app.request(
       new Request('http://localhost/pins', {
         method: 'POST',
         headers: {
-          'content-type': 'application/json',
-          'x-forwarded-host': 'tack-api-production.up.railway.app',
-          'x-forwarded-proto': 'https'
+          'content-type': 'application/json'
         },
         body: JSON.stringify({ cid: 'bafy-test' })
       })
