@@ -38,17 +38,17 @@ Implements the [IPFS Pinning Service API](https://ipfs.github.io/pinning-service
 |---|---|---|---|
 | `POST` | `/pins` | x402 payment | Pin a CID |
 | `POST` | `/upload` | x402 payment | Upload a file and pin it |
-| `GET` | `/pins` | Bearer token | List your pins |
-| `GET` | `/pins/:requestid` | Bearer token | Get pin status |
-| `POST` | `/pins/:requestid` | Bearer token | Replace a pin |
-| `DELETE` | `/pins/:requestid` | Bearer token | Delete a pin |
+| `GET` | `/pins` | Wallet identity | List your pins |
+| `GET` | `/pins/:requestid` | Wallet identity | Get pin status |
+| `POST` | `/pins/:requestid` | Wallet identity | Replace a pin |
+| `DELETE` | `/pins/:requestid` | Wallet identity | Delete a pin |
 | `GET` | `/ipfs/:cid` | None | Retrieve content (supports ETag, Range) |
 | `GET` | `/health` | None | Service health check |
 | `GET` | `/.well-known/agent.json` | None | A2A agent discovery |
 
 **Pricing**: $0.001 base + $0.001/MB per pin operation, settled in USDC on Taiko Alethia via x402.
 
-**Auth model**: Paid endpoints use `payment-signature` (x402). Owner endpoints (list, get, replace, delete) use `Authorization: Bearer <token>`. The wallet that pays owns the pin.
+**Auth model**: Paid endpoints use `payment-signature` (x402). Owner endpoints (list, get, replace, delete) require wallet identity from the owning wallet, provided either by `payment-signature` or, when configured, `Authorization: Bearer <token>`. The wallet that pays owns the pin.
 
 ## For AI Agents
 

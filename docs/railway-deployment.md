@@ -43,7 +43,7 @@ Set these in Railway Variables.
 | `DELEGATE_URL` | `https://<ipfs-gateway-domain>/ipfs` | Returned in pin delegates metadata. |
 | `PUBLIC_BASE_URL` | `https://<your-api-domain>` | Recommended. Used for AgentCard and x402 absolute resource URLs. |
 | `TRUST_PROXY` | `true` | Railway terminates edge traffic before your service. |
-| `WALLET_AUTH_TOKEN_SECRET` | long random secret | Required for owner `Authorization: Bearer` flows. |
+| `WALLET_AUTH_TOKEN_SECRET` | long random secret | Optional. Set it if you want signed `Authorization: Bearer` flows for owner routes. |
 | `X402_ENABLED` | `true` | Required for production startup checks. |
 | `X402_FACILITATOR_URL` | `https://facilitator.taiko.xyz` | Taiko x402 facilitator endpoint. |
 | `X402_NETWORK` | `eip155:167000` | Taiko Alethia. |
@@ -101,7 +101,7 @@ When a release causes issues:
 2. API and Kubo persistent volumes attached and non-empty after a redeploy.
 3. `X402_ENABLED=true` and `X402_NETWORK=eip155:167000`.
 4. `X402_PAY_TO` and `X402_USDC_ASSET_ADDRESS` are real Taiko Alethia addresses.
-5. `WALLET_AUTH_TOKEN_SECRET` is set to a strong random value.
+5. `WALLET_AUTH_TOKEN_SECRET` is set to a strong random value if you want bearer-token access to owner routes.
 6. `PUBLIC_BASE_URL` matches the public Railway HTTPS domain.
 7. `TRUST_PROXY=true` configured.
 8. `/health` stable at `200` over repeated checks.
