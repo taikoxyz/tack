@@ -41,6 +41,7 @@ Set these in Railway Variables.
 | `IPFS_API_URL` | `http://tack-ipfs.railway.internal:5001` | Use your internal service hostname from Railway networking. |
 | `DATABASE_PATH` | `/app/data/tack.db` | Must be on the mounted persistent volume. |
 | `DELEGATE_URL` | `https://<ipfs-gateway-domain>/ipfs` | Returned in pin delegates metadata. |
+| `PUBLIC_BASE_URL` | `https://<your-api-domain>` | Recommended. Used for AgentCard and x402 absolute resource URLs. |
 | `TRUST_PROXY` | `true` | Railway terminates edge traffic before your service. |
 | `WALLET_AUTH_TOKEN_SECRET` | long random secret | Required for owner `Authorization: Bearer` flows. |
 | `X402_ENABLED` | `true` | Required for production startup checks. |
@@ -101,11 +102,12 @@ When a release causes issues:
 3. `X402_ENABLED=true` and `X402_NETWORK=eip155:167000`.
 4. `X402_PAY_TO` and `X402_USDC_ASSET_ADDRESS` are real Taiko Alethia addresses.
 5. `WALLET_AUTH_TOKEN_SECRET` is set to a strong random value.
-6. `TRUST_PROXY=true` configured.
-7. `/health` stable at `200` over repeated checks.
-8. End-to-end smoke passes (`pnpm smoke:x402`) against Railway URL.
-9. Manual pin/list/get/delete flow works with paid wallet identity.
-10. Rollback owner and backup location documented before launch.
+6. `PUBLIC_BASE_URL` matches the public Railway HTTPS domain.
+7. `TRUST_PROXY=true` configured.
+8. `/health` stable at `200` over repeated checks.
+9. End-to-end smoke passes (`pnpm smoke:x402`) against Railway URL.
+10. Manual pin/list/get/delete flow works with paid wallet identity.
+11. Rollback owner and backup location documented before launch.
 
 ## 8) Production Limitations & Upgrade Path
 

@@ -6,6 +6,7 @@ export interface AppConfig {
   ipfsTimeoutMs: number;
   dbPath: string;
   delegateUrl: string;
+  publicBaseUrl?: string;
   trustProxy: boolean;
   walletAuthTokenSecret?: string;
   uploadMaxSizeBytes: number;
@@ -63,6 +64,41 @@ function parseList(value: string | undefined): string[] {
     .filter((item) => item.length > 0);
 }
 
+function parsePublicBaseUrl(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error('Invalid URL for PUBLIC_BASE_URL');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('PUBLIC_BASE_URL must use http or https');
+  }
+
+  if (
+    parsed.username.length > 0 ||
+    parsed.password.length > 0 ||
+    parsed.pathname !== '/' ||
+    parsed.search.length > 0 ||
+    parsed.hash.length > 0
+  ) {
+    throw new Error('PUBLIC_BASE_URL must be an origin without path, query, or hash');
+  }
+
+  return parsed.origin;
+}
+
 function isPlaceholderEvmAddress(value: string): boolean {
   return PLACEHOLDER_EVM_ADDRESSES.has(value.trim().toLowerCase());
 }
@@ -103,6 +139,7 @@ export function getConfig(): AppConfig {
     ipfsTimeoutMs: parseNumber(process.env.IPFS_TIMEOUT_MS, 30000, 'IPFS_TIMEOUT_MS'),
     dbPath: process.env.DATABASE_PATH ?? './data/tack.db',
     delegateUrl: process.env.DELEGATE_URL ?? 'http://localhost:8080/ipfs',
+    publicBaseUrl: parsePublicBaseUrl(process.env.PUBLIC_BASE_URL),
     trustProxy: parseBoolean(process.env.TRUST_PROXY, false),
     walletAuthTokenSecret: process.env.WALLET_AUTH_TOKEN_SECRET,
     uploadMaxSizeBytes: parseNumber(process.env.UPLOAD_MAX_SIZE_BYTES, 100 * 1024 * 1024, 'UPLOAD_MAX_SIZE_BYTES'),

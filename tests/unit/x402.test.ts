@@ -4,6 +4,7 @@ import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePayment
 import type { FacilitatorClient } from '@x402/core/server';
 import type { PaymentPayload, PaymentRequirements } from '@x402/core/types';
 import { describe, expect, it } from 'vitest';
+import { createExternalRequestUrlMiddleware } from '../../src/lib/request-url';
 import { calculatePriceUsd, createX402PaymentMiddleware, resolveWalletFromHeaders, type X402PaymentConfig } from '../../src/services/x402';
 
 const testConfig: X402PaymentConfig = {
@@ -168,6 +169,7 @@ describe('x402 middleware', () => {
     expect(paymentRequiredHeader).toBeTruthy();
 
     const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
+    expect(paymentRequired.resource?.url).toBe('http://localhost/pins');
     const accepted = paymentRequired.accepts[0];
     const paymentPayload: PaymentPayload = {
       x402Version: paymentRequired.x402Version,
@@ -203,6 +205,30 @@ describe('x402 middleware', () => {
     const settlement = decodePaymentResponseHeader(paymentResponseHeader!);
     expect(settlement.success).toBe(true);
     expect(settlement.network).toBe(testConfig.network);
+  });
+
+  it('uses the normalized public URL in payment requirements', async () => {
+    const app = new Hono();
+    app.use(createExternalRequestUrlMiddleware({ publicBaseUrl: 'https://tack-api-production.up.railway.app' }));
+    app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
+    app.post('/pins', (c) => c.json({ ok: true }));
+
+    const unpaid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ cid: 'bafy-test' })
+      })
+    );
+
+    expect(unpaid.status).toBe(402);
+    const paymentRequiredHeader = unpaid.headers.get('payment-required');
+    expect(paymentRequiredHeader).toBeTruthy();
+
+    const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
+    expect(paymentRequired.resource?.url).toBe('https://tack-api-production.up.railway.app/pins');
   });
 
   it('enforces optional retrieval paywall with dynamic owner payout', async () => {

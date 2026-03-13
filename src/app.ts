@@ -9,6 +9,7 @@ import {
   UpstreamServiceError,
   ValidationError
 } from './lib/errors';
+import { createExternalRequestUrlMiddleware } from './lib/request-url';
 import { toPinStatusResponse, type PinningService } from './services/pinning-service';
 import type { InMemoryRateLimiter } from './services/rate-limiter';
 import { logger } from './services/logger';
@@ -302,6 +303,7 @@ export interface AppServices {
   walletAuthTokenSecret?: string;
   gatewayCacheControlMaxAgeSeconds?: number;
   uploadMaxSizeBytes?: number;
+  publicBaseUrl?: string;
   trustProxy?: boolean;
   rateLimiter?: InMemoryRateLimiter;
   healthCheck?: () => Promise<void>;
@@ -328,7 +330,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const cacheControlMaxAgeSeconds = services.gatewayCacheControlMaxAgeSeconds ?? DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS;
   const uploadMaxSizeBytes = services.uploadMaxSizeBytes ?? DEFAULT_UPLOAD_MAX_SIZE_BYTES;
+  const publicBaseUrl = services.publicBaseUrl;
   const trustProxy = services.trustProxy ?? false;
+
+  app.use('*', createExternalRequestUrlMiddleware({
+    publicBaseUrl,
+    trustProxy
+  }));
 
   if (services.paymentMiddleware) {
     app.use(services.paymentMiddleware);
@@ -408,8 +416,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   });
 
   app.get('/.well-known/agent.json', (c) => {
-    const baseUrl = new URL(c.req.url);
-    const origin = `${baseUrl.protocol}//${baseUrl.host}`;
+    const origin = new URL(c.req.url).origin;
     const agent = services.agentCard;
 
     return c.json({

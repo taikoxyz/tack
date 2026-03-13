@@ -80,6 +80,7 @@ const app = createApp({
   walletAuthTokenSecret: config.walletAuthTokenSecret,
   gatewayCacheControlMaxAgeSeconds: config.gatewayCacheControlMaxAgeSeconds,
   uploadMaxSizeBytes: config.uploadMaxSizeBytes,
+  publicBaseUrl: config.publicBaseUrl,
   trustProxy: config.trustProxy,
   healthCheck: async () => {
     await ipfsClient.id();
