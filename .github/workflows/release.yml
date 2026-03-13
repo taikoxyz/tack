@@ -19,21 +19,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check spelling
         uses: crate-ci/typos@v1
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.6.2
-
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Validate tag matches package version
         run: |
@@ -75,18 +72,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.6.2
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Validate release configuration
         env:
@@ -188,7 +182,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Build release notes
         run: node scripts/extract-changelog-section.mjs "$GITHUB_REF_NAME" > RELEASE_NOTES.md
