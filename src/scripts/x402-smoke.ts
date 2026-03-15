@@ -7,6 +7,7 @@ import { toClientEvmSigner } from '@x402/evm';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { createPublicClient, defineChain, http, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { WALLET_AUTH_TOKEN_RESPONSE_HEADER } from '../services/x402';
 
 interface SmokeConfig {
   apiBaseUrl: string;
@@ -296,10 +297,17 @@ async function run(): Promise<void> {
     throw new Error(`Paid pin response missing requestid: ${paidBodyText}`);
   }
 
+  const ownerToken = pinResult.response.headers.get(WALLET_AUTH_TOKEN_RESPONSE_HEADER);
+  if (!ownerToken) {
+    throw new Error(`Paid POST /pins response missing ${WALLET_AUTH_TOKEN_RESPONSE_HEADER} header`);
+  }
+
   const pinStatusResponse = await fetchWithTimeout(
     `${pinsUrl}/${pinResponse.requestid}`,
     {
-      headers: pinResult.paymentSignatureHeaders
+      headers: {
+        authorization: `Bearer ${ownerToken}`
+      }
     },
     config.requestTimeoutMs
   );

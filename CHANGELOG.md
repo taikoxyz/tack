@@ -11,6 +11,11 @@ Format:
 
 - None yet.
 
+## [v0.1.3] - 2026-03-15
+
+### Fixed
+- Release paid smoke now uses the bearer token issued by `POST /pins` when polling pin status, so CI validates the authenticated owner flow that production enforces.
+
 ## [v0.1.2] - 2026-03-15
 
 ### Fixed
@@ -43,7 +48,8 @@ Format:
 ### Docs
 - Added Railway deployment and Taiko x402 smoke runbooks covering volumes, backups, rollback, and go-live validation.
 
-[Unreleased]: https://github.com/taikoxyz/tack/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/taikoxyz/tack/compare/v0.1.3...HEAD
+[v0.1.3]: https://github.com/taikoxyz/tack/releases/tag/v0.1.3
 [v0.1.2]: https://github.com/taikoxyz/tack/releases/tag/v0.1.2
 [v0.1.1]: https://github.com/taikoxyz/tack/releases/tag/v0.1.1
 [v0.1.0]: https://github.com/taikoxyz/tack/releases/tag/v0.1.0
