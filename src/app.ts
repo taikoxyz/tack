@@ -29,11 +29,6 @@ import { landingPageHtml } from './landing';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
-const ENRICHED_402_BODY = JSON.stringify({
-  error: 'Payment verification failed',
-  hint: 'Decode the base64 Payment-Required header for the error reason and payment requirements.',
-  spec: X402_SPEC_URL,
-});
 const MULTIPART_REQUEST_SIZE_OVERHEAD_BYTES = 64 * 1024;
 
 interface ByteRange {
@@ -413,7 +408,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
     try {
       if (services.rateLimiter) {
-        const key = identity.wallet ?? identity.paidWallet ?? `ip:${getRequesterIp(c.env, c.req.raw.headers, trustProxy, trustedProxyCidrs)}`;
+        const key = identity.wallet ?? `ip:${getRequesterIp(c.env, c.req.raw.headers, trustProxy, trustedProxyCidrs)}`;
         const rateLimit = services.rateLimiter.consume(key);
         c.header('X-RateLimit-Limit', String(rateLimit.limit));
         c.header('X-RateLimit-Remaining', String(rateLimit.remaining));
@@ -448,19 +443,6 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   });
 
   app.use(services.paymentMiddleware);
-
-  app.use('*', async (c, next) => {
-    await next();
-    if (c.res.status === 402 && c.res.headers.get('payment-required')) {
-      const body = await c.res.text();
-      if (body === '{}') {
-        c.res = new Response(ENRICHED_402_BODY, {
-          status: 402,
-          headers: c.res.headers,
-        });
-      }
-    }
-  });
 
   app.get('/health', async (c) => {
     if (!services.healthCheck) {
