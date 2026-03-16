@@ -600,6 +600,7 @@ describe('API integration', () => {
 
     expect(response.status).toBe(402);
     expect(response.headers.get('payment-response')).toBeTruthy();
+    expect(response.headers.get('x-request-id')).toBeTruthy();
     expect(await response.json()).toEqual({
       error: 'Payment settlement failed',
       reason: 'settle failed',

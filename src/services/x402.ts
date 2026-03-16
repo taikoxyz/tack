@@ -659,9 +659,14 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer): Middleware
               ? (typeof response.body === 'string' ? response.body : '')
               : JSON.stringify(response.body ?? {});
 
+            const mergedHeaders = new Headers(res.headers);
+            Object.entries(response.headers).forEach(([key, value]) => {
+              mergedHeaders.set(key, value);
+            });
+
             res = new Response(body, {
               status: response.status,
-              headers: response.headers
+              headers: mergedHeaders
             });
           } else {
             Object.entries(settleResult.headers).forEach(([key, value]) => {
@@ -670,7 +675,11 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer): Middleware
           }
         } catch (error) {
           console.error(error);
-          res = c.json(createUnexpectedSettlementFailureResponseBody(), 402);
+          const fallbackHeaders = new Headers(res.headers);
+          res = new Response(JSON.stringify(createUnexpectedSettlementFailureResponseBody()), {
+            status: 402,
+            headers: fallbackHeaders
+          });
         }
 
         c.res = res;
