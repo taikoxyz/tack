@@ -13,6 +13,7 @@ import {
 } from '@x402/core/server';
 import type { MiddlewareHandler } from 'hono';
 import type { PaymentPayload } from '@x402/core/types';
+import { logger } from './logger';
 
 interface AssetAmountPrice {
   amount: string;
@@ -591,6 +592,23 @@ function resolvePaymentErrorBody(response: HTTPResponseInstructions, context: HT
   return createVerificationFailureResponseBody(response);
 }
 
+const SAFE_TRACING_HEADERS = [
+  'x-request-id',
+  'x-ratelimit-limit',
+  'x-ratelimit-remaining',
+];
+
+function extractTracingHeaders(source: Headers): Headers {
+  const headers = new Headers();
+  for (const name of SAFE_TRACING_HEADERS) {
+    const value = source.get(name);
+    if (value !== null) {
+      headers.set(name, value);
+    }
+  }
+  return headers;
+}
+
 function createPaymentMiddleware(httpServer: x402HTTPResourceServer): MiddlewareHandler {
   let initPromise: Promise<void> | null = httpServer.initialize();
 
@@ -659,14 +677,14 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer): Middleware
               ? (typeof response.body === 'string' ? response.body : '')
               : JSON.stringify(response.body ?? {});
 
-            const mergedHeaders = new Headers(res.headers);
+            const errorHeaders = extractTracingHeaders(res.headers);
             Object.entries(response.headers).forEach(([key, value]) => {
-              mergedHeaders.set(key, value);
+              errorHeaders.set(key, value);
             });
 
             res = new Response(body, {
               status: response.status,
-              headers: mergedHeaders
+              headers: errorHeaders
             });
           } else {
             Object.entries(settleResult.headers).forEach(([key, value]) => {
@@ -674,8 +692,8 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer): Middleware
             });
           }
         } catch (error) {
-          console.error(error);
-          const fallbackHeaders = new Headers(res.headers);
+          logger.error({ err: error, path: context.path, method: context.method }, 'unexpected settlement error');
+          const fallbackHeaders = extractTracingHeaders(res.headers);
           res = new Response(JSON.stringify(createUnexpectedSettlementFailureResponseBody()), {
             status: 402,
             headers: fallbackHeaders
