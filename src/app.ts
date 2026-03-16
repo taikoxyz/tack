@@ -21,6 +21,7 @@ import {
   resolveWalletFromHeaders,
   WALLET_AUTH_TOKEN_EXPIRES_AT_RESPONSE_HEADER,
   WALLET_AUTH_TOKEN_RESPONSE_HEADER,
+  X402_SPEC_URL,
   type WalletAuthConfig
 } from './services/x402';
 import type { PinStatusValue } from './types';
@@ -28,6 +29,11 @@ import { landingPageHtml } from './landing';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
+const ENRICHED_402_BODY = JSON.stringify({
+  error: 'Payment verification failed',
+  hint: 'Decode the base64 Payment-Required header for the error reason and payment requirements.',
+  spec: X402_SPEC_URL,
+});
 const MULTIPART_REQUEST_SIZE_OVERHEAD_BYTES = 64 * 1024;
 
 interface ByteRange {
@@ -394,8 +400,6 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     return c.html(landingPageHtml(origin));
   });
 
-  app.use(services.paymentMiddleware);
-
   app.use('*', async (c, next) => {
     const requestId = c.req.header('x-request-id') ?? randomUUID();
     const requestPath = new URL(c.req.url).pathname;
@@ -440,6 +444,21 @@ export function createApp(services: AppServices): Hono<AppEnv> {
         err: error
       }, 'request failed');
       throw error;
+    }
+  });
+
+  app.use(services.paymentMiddleware);
+
+  app.use('*', async (c, next) => {
+    await next();
+    if (c.res.status === 402 && c.res.headers.get('payment-required')) {
+      const body = await c.res.text();
+      if (body === '{}') {
+        c.res = new Response(ENRICHED_402_BODY, {
+          status: 402,
+          headers: c.res.headers,
+        });
+      }
     }
   });
 
@@ -489,6 +508,9 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       pricing: {
         pinning: {
           protocol: 'x402',
+          spec: X402_SPEC_URL,
+          clientSdk: '@x402/fetch',
+          paymentHeader: 'Payment-Signature',
           network: agent?.x402Network,
           asset: agent?.x402UsdcAssetAddress,
           baseUsd: agent?.x402BasePriceUsd,
@@ -500,6 +522,18 @@ export function createApp(services: AppServices): Hono<AppEnv> {
           metadataField: 'meta.retrievalPrice',
           settlement: 'owner-wallet'
         }
+      },
+      authentication: {
+        walletAuthToken: {
+          description: 'Paid requests return x-wallet-auth-token. Use as Bearer token for owner endpoints (GET /pins, DELETE /pins/:id).',
+          responseHeaders: [WALLET_AUTH_TOKEN_RESPONSE_HEADER, WALLET_AUTH_TOKEN_EXPIRES_AT_RESPONSE_HEADER],
+          usage: 'Authorization: Bearer <token>',
+        }
+      },
+      links: {
+        x402Spec: X402_SPEC_URL,
+        x402ClientSdk: 'https://www.npmjs.com/package/@x402/fetch',
+        ipfsPinningSpec: 'https://ipfs.github.io/pinning-services-api-spec/',
       }
     });
   });

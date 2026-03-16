@@ -186,6 +186,11 @@ describe('x402 middleware', () => {
     );
 
     expect(unpaid.status).toBe(402);
+    const unpaidBody = await unpaid.json();
+    expect(unpaidBody.error).toBe('Payment required');
+    expect(unpaidBody.protocol.spec).toBe('https://www.x402.org/');
+    expect(unpaidBody.client.package).toBe('@x402/fetch');
+
     const paymentRequiredHeader = unpaid.headers.get('payment-required');
     expect(paymentRequiredHeader).toBeTruthy();
 

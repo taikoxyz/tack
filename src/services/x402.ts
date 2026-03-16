@@ -51,6 +51,7 @@ export interface WalletAuthToken {
 
 export const WALLET_AUTH_TOKEN_RESPONSE_HEADER = 'x-wallet-auth-token';
 export const WALLET_AUTH_TOKEN_EXPIRES_AT_RESPONSE_HEADER = 'x-wallet-auth-token-expires-at';
+export const X402_SPEC_URL = 'https://www.x402.org/';
 
 export interface RetrievalPaymentRequirement {
   payTo: string;
@@ -460,6 +461,35 @@ async function resolveRetrievalRequirement(
   return resolver(cid);
 }
 
+function makeUnpaidResponseBody(description: string) {
+  return () => ({
+    contentType: 'application/json' as const,
+    body: {
+      error: 'Payment required',
+      description,
+      protocol: { name: 'x402', version: 2, spec: X402_SPEC_URL },
+      client: {
+        package: '@x402/fetch',
+        install: 'npm install @x402/fetch @x402/evm',
+        usage: 'Wrap fetch with wrapFetchWithPaymentFromConfig() — it reads the Payment-Required header and handles payment automatically.',
+      },
+      note: 'Decode the base64 Payment-Required response header for full payment requirements. If your payment fails, the error reason is in that same header.',
+    }
+  });
+}
+
+function makeSettlementFailedResponseBody() {
+  return (_context: HTTPRequestContext, settleResult: { errorReason?: string; errorMessage?: string }) => ({
+    contentType: 'application/json' as const,
+    body: {
+      error: 'Payment settlement failed',
+      reason: settleResult.errorReason,
+      message: settleResult.errorMessage ?? 'The payment could not be settled on-chain.',
+      spec: X402_SPEC_URL,
+    }
+  });
+}
+
 export function createX402PaymentMiddleware(
   config: X402PaymentConfig,
   facilitatorClient?: FacilitatorClient,
@@ -486,7 +516,9 @@ export function createX402PaymentMiddleware(
         }
       },
       description: 'Create IPFS pin',
-      mimeType: 'application/json'
+      mimeType: 'application/json',
+      unpaidResponseBody: makeUnpaidResponseBody('Pin a CID to IPFS.'),
+      settlementFailedResponseBody: makeSettlementFailedResponseBody()
     },
     'POST /upload': {
       accepts: {
@@ -501,7 +533,9 @@ export function createX402PaymentMiddleware(
         }
       },
       description: 'Upload content to IPFS',
-      mimeType: 'application/json'
+      mimeType: 'application/json',
+      unpaidResponseBody: makeUnpaidResponseBody('Upload content to IPFS and pin it.'),
+      settlementFailedResponseBody: makeSettlementFailedResponseBody()
     }
   };
 

@@ -459,14 +459,38 @@ describe('API integration', () => {
       endpoint: string;
       protocol: string;
       capabilities: { pinningApi: { endpoints: string[] } };
-      pricing: { retrieval: { metadataField: string }; pinning: { protocol: string } };
+      pricing: { retrieval: { metadataField: string }; pinning: { protocol: string; spec: string } };
+      authentication: { walletAuthToken: { description: string; usage: string } };
+      links: { x402Spec: string; x402ClientSdk: string; ipfsPinningSpec: string };
     };
 
     expect(agentCard.protocol).toBe('a2a');
     expect(agentCard.endpoint).toBe('http://localhost');
     expect(agentCard.capabilities.pinningApi.endpoints).toContain('/pins');
     expect(agentCard.pricing.pinning.protocol).toBe('x402');
+    expect(agentCard.pricing.pinning.spec).toBe('https://www.x402.org/');
     expect(agentCard.pricing.retrieval.metadataField).toBe('meta.retrievalPrice');
+    expect(agentCard.authentication.walletAuthToken.usage).toBe('Authorization: Bearer <token>');
+    expect(agentCard.links.x402Spec).toBe('https://www.x402.org/');
+    expect(agentCard.links.x402ClientSdk).toBe('https://www.npmjs.com/package/@x402/fetch');
+    expect(agentCard.links.ipfsPinningSpec).toBe('https://ipfs.github.io/pinning-services-api-spec/');
+  });
+
+  it('includes X-Request-Id and enriched body in 402 responses', async () => {
+    const unpaid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-unpaid' })
+      })
+    );
+
+    expect(unpaid.status).toBe(402);
+    expect(unpaid.headers.get('x-request-id')).toBeTruthy();
+    const body = (await unpaid.json()) as { error: string; protocol: { spec: string }; client: { package: string } };
+    expect(body.error).toBe('Payment required');
+    expect(body.protocol.spec).toBe('https://www.x402.org/');
+    expect(body.client.package).toBe('@x402/fetch');
   });
 
   it('uses forwarded host and proto in the AgentCard when trustProxy is enabled', async () => {
