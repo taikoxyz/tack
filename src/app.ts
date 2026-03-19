@@ -451,18 +451,22 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   });
 
   // MPP middleware runs first on payment-gated routes
+  // MPP middleware only on routes that require payment (not /pins/* which are owner endpoints)
   if (services.mppMiddleware) {
     app.use('/pins', services.mppMiddleware);
-    app.use('/pins/*', services.mppMiddleware);
     app.use('/upload', services.mppMiddleware);
     app.use('/ipfs/*', services.mppMiddleware);
   }
 
-  app.use(services.paymentMiddleware);
-
+  // MPP challenge enhancer wraps x402 middleware — must be registered BEFORE x402
+  // so that when it calls next(), x402 runs, and the enhancer can modify the 402 response
   if (services.mppChallengeEnhancer) {
-    app.use(services.mppChallengeEnhancer);
+    app.use('/pins', services.mppChallengeEnhancer);
+    app.use('/upload', services.mppChallengeEnhancer);
+    app.use('/ipfs/*', services.mppChallengeEnhancer);
   }
+
+  app.use(services.paymentMiddleware);
 
   app.get('/health', async (c) => {
     if (!services.healthCheck) {
