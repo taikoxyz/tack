@@ -453,6 +453,9 @@ export function toPinStatusResponse(record: StoredPinRecord): PinStatusResponse 
       meta: record.meta
     },
     delegates: record.delegates,
-    info: record.info
+    info: {
+      ...record.info,
+      ...(record.expires_at ? { expiresAt: record.expires_at } : {})
+    }
   };
 }

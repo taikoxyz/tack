@@ -55,9 +55,11 @@ const paymentMiddleware = createX402PaymentMiddleware({
   usdcAssetDecimals: config.x402UsdcAssetDecimals,
   usdcDomainName: config.x402UsdcDomainName,
   usdcDomainVersion: config.x402UsdcDomainVersion,
-  basePriceUsd: config.x402BasePriceUsd,
-  pricePerMbUsd: config.x402PricePerMbUsd,
-  maxPriceUsd: config.x402MaxPriceUsd
+  ratePerGbMonthUsd: config.x402RatePerGbMonthUsd,
+  minPriceUsd: config.x402MinPriceUsd,
+  maxPriceUsd: config.x402MaxPriceUsd,
+  defaultDurationMonths: config.x402DefaultDurationMonths,
+  maxDurationMonths: config.x402MaxDurationMonths
 }, undefined, {
   resolveRetrievalPayment: (cid) => {
     const policy = pinningService.resolveRetrievalPaymentPolicy(cid);
@@ -90,15 +92,18 @@ const app = createApp({
     await ipfsClient.id();
   },
   rateLimiter,
+  defaultDurationMonths: config.x402DefaultDurationMonths,
+  maxDurationMonths: config.x402MaxDurationMonths,
   agentCard: {
     name: 'Tack',
     description: 'Pin to IPFS, pay with your wallet. No account needed.',
     version: appVersion,
     x402Network: config.x402Network,
     x402UsdcAssetAddress: config.x402UsdcAssetAddress,
-    x402BasePriceUsd: config.x402BasePriceUsd,
-    x402PricePerMbUsd: config.x402PricePerMbUsd,
-    x402MaxPriceUsd: config.x402MaxPriceUsd
+    x402RatePerGbMonthUsd: config.x402RatePerGbMonthUsd,
+    x402MinPriceUsd: config.x402MinPriceUsd,
+    x402DefaultDurationMonths: config.x402DefaultDurationMonths,
+    x402MaxDurationMonths: config.x402MaxDurationMonths
   }
 });
 
