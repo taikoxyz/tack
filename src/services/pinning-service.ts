@@ -14,6 +14,7 @@ export interface CreatePinInput {
   origins?: string[];
   meta?: Record<string, string>;
   owner: string;
+  durationMonths?: number;
 }
 
 export interface ReplacePinInput {
@@ -66,6 +67,29 @@ interface ReplicaPinResult {
   error?: string;
 }
 
+function computeExpiresAt(durationMonths: number | undefined): string | null {
+  if (durationMonths === undefined || durationMonths <= 0) {
+    return null;
+  }
+
+  const now = new Date();
+  const targetYear = now.getUTCFullYear();
+  const targetMonth = now.getUTCMonth() + durationMonths;
+  const maxDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(now.getUTCDate(), maxDay);
+
+  const target = new Date(Date.UTC(
+    targetYear,
+    targetMonth,
+    clampedDay,
+    now.getUTCHours(),
+    now.getUTCMinutes(),
+    now.getUTCSeconds(),
+    now.getUTCMilliseconds()
+  ));
+  return target.toISOString();
+}
+
 function parseRetrievalPriceUsd(meta: Record<string, string>): number | null {
   const raw = meta.retrievalPrice ?? meta.retrievalPriceUsd;
   if (!raw) {
@@ -114,7 +138,8 @@ export class PinningService {
       info: {},
       owner: input.owner,
       created: now,
-      updated: now
+      updated: now,
+      expires_at: computeExpiresAt(input.durationMonths)
     };
 
     this.repository.create(record);
@@ -178,7 +203,8 @@ export class PinningService {
       meta: input.meta ?? {},
       status: 'pinning',
       info: {},
-      updated: new Date().toISOString()
+      updated: new Date().toISOString(),
+      expires_at: existing.expires_at
     };
 
     this.repository.update(requestid, next);

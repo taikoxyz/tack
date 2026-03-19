@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '../../src/db';
 import { PinRepository } from '../../src/repositories/pin-repository';
+import { GatewayContentCache } from '../../src/services/content-cache';
 import type { IpfsClient } from '../../src/services/ipfs-rpc-client';
 import { PinningService } from '../../src/services/pinning-service';
 
@@ -252,5 +253,34 @@ describe('PinningService', () => {
     db.prepare('DELETE FROM cid_owners WHERE cid = ?').run('bafy-legacy-ambiguous');
 
     expect(service.resolveRetrievalPaymentPolicy('bafy-legacy-ambiguous')).toBeNull();
+  });
+
+  it('sets expires_at when durationMonths is provided', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-19T12:00:00.000Z'));
+
+    const result = await service.createPin({ cid: 'bafy-expiry', owner: wallet, durationMonths: 3 });
+
+    expect(result.expires_at).toBe('2026-06-19T12:00:00.000Z');
+    expect(result.status).toBe('pinned');
+  });
+
+  it('leaves expires_at null when called without durationMonths (internal/legacy path)', async () => {
+    const result = await service.createPin({ cid: 'bafy-no-expiry', owner: wallet });
+
+    expect(result.expires_at).toBeNull();
+  });
+
+  it('inherits expires_at when replacing a pin', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-19T12:00:00.000Z'));
+
+    const created = await service.createPin({ cid: 'bafy-original', owner: wallet, durationMonths: 6 });
+    expect(created.expires_at).toBe('2026-09-19T12:00:00.000Z');
+
+    vi.setSystemTime(new Date('2026-04-01T00:00:00.000Z'));
+    const replaced = await service.replacePin(created.requestid, { cid: 'bafy-replacement' }, wallet);
+
+    expect(replaced.expires_at).toBe('2026-09-19T12:00:00.000Z');
   });
 });
