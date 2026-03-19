@@ -345,6 +345,11 @@ export interface AgentCardConfig {
   x402BasePriceUsd: number;
   x402PricePerMbUsd: number;
   x402MaxPriceUsd: number;
+  // MPP fields:
+  mppMethod?: string;
+  mppChainId?: number;
+  mppAsset?: string;
+  mppAssetSymbol?: string;
 }
 
 export interface AppServices {
@@ -478,6 +483,28 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     const origin = new URL(c.req.url).origin;
     const agent = services.agentCard;
 
+    const protocols: Array<Record<string, unknown>> = [
+      {
+        protocol: 'x402',
+        chain: 'taiko',
+        chainId: 167000,
+        asset: agent?.x402UsdcAssetAddress,
+        network: agent?.x402Network,
+      },
+    ];
+
+    if (agent?.mppMethod) {
+      protocols.push({
+        protocol: 'mpp',
+        method: agent.mppMethod,
+        chain: 'tempo',
+        chainId: agent.mppChainId,
+        asset: agent.mppAsset,
+        assetSymbol: agent.mppAssetSymbol,
+        intent: 'charge',
+      });
+    }
+
     return c.json({
       protocol: 'a2a',
       version: '1.0',
@@ -493,6 +520,15 @@ export function createApp(services: AppServices): Hono<AppEnv> {
           endpoint: '/ipfs/:cid',
           supports: ['etag', 'range', 'cache-control', 'optional-paywall']
         }
+      },
+      payments: {
+        protocols,
+        pricing: {
+          base: agent?.x402BasePriceUsd,
+          perMb: agent?.x402PricePerMbUsd,
+          max: agent?.x402MaxPriceUsd,
+          currency: 'USD',
+        },
       },
       pricing: {
         pinning: {

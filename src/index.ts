@@ -164,7 +164,11 @@ const app = createApp({
     x402UsdcAssetAddress: config.x402UsdcAssetAddress,
     x402BasePriceUsd: config.x402BasePriceUsd,
     x402PricePerMbUsd: config.x402PricePerMbUsd,
-    x402MaxPriceUsd: config.x402MaxPriceUsd
+    x402MaxPriceUsd: config.x402MaxPriceUsd,
+    mppMethod: 'tempo',
+    mppChainId: 4217,
+    mppAsset: '0x20C000000000000000000000b9537d11c60E8b50',
+    mppAssetSymbol: 'USDC.e',
   }
 });
 
