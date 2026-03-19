@@ -247,10 +247,14 @@ describe('x402 middleware', () => {
       error: string;
       protocol: { spec: string };
       client: { package: string };
+      pricing: { ratePerGbMonthUsd: number; durationMonths: number; minPriceUsd: number };
     };
     expect(unpaidBody.error).toBe('Payment required');
     expect(unpaidBody.protocol.spec).toBe('https://www.x402.org/');
     expect(unpaidBody.client.package).toBe('@x402/fetch');
+    expect(unpaidBody.pricing.ratePerGbMonthUsd).toBe(0.05);
+    expect(unpaidBody.pricing.durationMonths).toBe(1);
+    expect(unpaidBody.pricing.minPriceUsd).toBe(0.001);
 
     const paymentRequiredHeader = unpaid.headers.get('payment-required');
     expect(paymentRequiredHeader).toBeTruthy();

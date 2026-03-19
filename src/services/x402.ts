@@ -498,12 +498,19 @@ function buildProtocolInfo(x402Version = 2) {
   };
 }
 
-function makeUnpaidResponseBody(description: string) {
+function makeUnpaidResponseBody(description: string, pricingConfig?: Pick<X402PaymentConfig, 'ratePerGbMonthUsd' | 'minPriceUsd' | 'defaultDurationMonths'>) {
   return () => ({
     contentType: 'application/json' as const,
     body: {
       error: 'Payment required',
       description,
+      ...(pricingConfig ? {
+        pricing: {
+          ratePerGbMonthUsd: pricingConfig.ratePerGbMonthUsd,
+          durationMonths: pricingConfig.defaultDurationMonths,
+          minPriceUsd: pricingConfig.minPriceUsd
+        }
+      } : {}),
       protocol: buildProtocolInfo(),
       client: buildRecommendedClientInfo(),
       note: 'Decode the base64 Payment-Required response header for full payment requirements. If your payment fails, the error reason is in that same header.'
@@ -750,7 +757,7 @@ export function createX402PaymentMiddleware(
       },
       description: 'Create IPFS pin',
       mimeType: 'application/json',
-      unpaidResponseBody: makeUnpaidResponseBody('Pin a CID to IPFS.'),
+      unpaidResponseBody: makeUnpaidResponseBody('Pin a CID to IPFS.', config),
       settlementFailedResponseBody: makeSettlementFailedResponseBody()
     },
     'POST /upload': {
