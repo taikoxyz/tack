@@ -95,11 +95,11 @@ export function parseDurationMonths(raw: string | null | undefined, defaultDurat
   }
 
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1 || value > maxDuration) {
+  if (!Number.isInteger(value) || value < 1) {
     return defaultDuration;
   }
 
-  return value;
+  return Math.min(value, maxDuration);
 }
 
 function resolveDurationMonths(context: HTTPRequestContext, config: Pick<X402PaymentConfig, 'defaultDurationMonths' | 'maxDurationMonths'>): number {

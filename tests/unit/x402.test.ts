@@ -155,7 +155,7 @@ describe('parseDurationMonths', () => {
   it('falls back to default for invalid values', () => {
     expect(parseDurationMonths('0', 1, 24)).toBe(1);
     expect(parseDurationMonths('-1', 1, 24)).toBe(1);
-    expect(parseDurationMonths('25', 1, 24)).toBe(1);
+    expect(parseDurationMonths('25', 1, 24)).toBe(24);
     expect(parseDurationMonths('1.5', 1, 24)).toBe(1);
     expect(parseDurationMonths('abc', 1, 24)).toBe(1);
   });
