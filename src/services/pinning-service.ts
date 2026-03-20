@@ -354,17 +354,18 @@ export class PinningService {
 
     for (const pin of expired) {
       const activeCount = this.repository.countActivePinsForCid(pin.cid, now);
-      const shouldUnpin = activeCount === 0;
+      const shouldUnpin = activeCount === 0 && pin.status === 'pinned';
 
       if (shouldUnpin) {
         try {
           await this.ipfsClient.pinRm(pin.cid);
           await this.unpinOnReplicas(pin.cid);
         } catch {
+          // Treat "not pinned" as success (CID already unpinned by a prior sweep).
+          // For genuine failures, still delete the record to avoid zombie loops.
           failedCount++;
-          continue;
         }
-      } else {
+      } else if (activeCount > 0) {
         skippedUnpinCount++;
       }
 

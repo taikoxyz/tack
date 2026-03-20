@@ -290,7 +290,7 @@ export class PinRepository {
         `
           SELECT COUNT(*) as count
           FROM pins
-          WHERE cid = ? AND (expires_at IS NULL OR expires_at > ?)
+          WHERE cid = ? AND status = 'pinned' AND (expires_at IS NULL OR expires_at > ?)
         `
       )
       .get(cid, now) as { count: number };

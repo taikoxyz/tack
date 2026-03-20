@@ -360,7 +360,7 @@ describe('PinningService', () => {
     expect(contentCache.get('bafy-cache-evict')).toBeFalsy();
   });
 
-  it('retries next cycle when Kubo unpin fails', async () => {
+  it('deletes record even when Kubo unpin fails to prevent zombie loops', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'));
 
@@ -371,12 +371,7 @@ describe('PinningService', () => {
 
     const firstSweep = await service.sweepExpiredPins();
     expect(firstSweep.failedCount).toBe(1);
-    expect(firstSweep.expiredCount).toBe(0);
-    expect(service.getPin(created.requestid, wallet)).toBeTruthy();
-
-    ipfsClient.pinRm.mockResolvedValueOnce(undefined);
-    const secondSweep = await service.sweepExpiredPins();
-    expect(secondSweep.expiredCount).toBe(1);
+    expect(firstSweep.expiredCount).toBe(1);
     expect(() => service.getPin(created.requestid, wallet)).toThrow('not found');
   });
 });

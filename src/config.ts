@@ -208,6 +208,10 @@ export function getConfig(): AppConfig {
     throw new Error('WALLET_AUTH_TOKEN_TTL_SECONDS must be a positive integer');
   }
 
+  if (config.x402DefaultDurationMonths > config.x402MaxDurationMonths) {
+    throw new Error('X402_DEFAULT_DURATION_MONTHS must not exceed X402_MAX_DURATION_MONTHS');
+  }
+
   validateProductionConfig(config);
   return config;
 }
