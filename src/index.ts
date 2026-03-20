@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serve } from '@hono/node-server';
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { Credential } from 'mppx';
 import { getConfig } from './config';
 import { createDb } from './db';
@@ -89,25 +89,26 @@ const x402PricingConfig = {
   maxPriceUsd: config.x402MaxPriceUsd,
 };
 
+// Shared MPP price resolution — single source of truth for both
+// the per-route middleware and the challenge enhancer.
+function resolveMppPrice(c: Context): string | null {
+  const cidParam = c.req.param('cid');
+  if (cidParam && c.req.method === 'GET') {
+    const policy = pinningService.resolveRetrievalPaymentPolicy(cidParam);
+    if (!policy || policy.priceUsd <= 0) return null;
+    return String(policy.priceUsd);
+  }
+  const sizeBytes = Number(
+    c.req.header('x-content-size-bytes') ?? c.req.header('content-length') ?? '0'
+  );
+  return String(calculatePriceUsd(sizeBytes, x402PricingConfig));
+}
+
 // MPP per-route middleware: handles Authorization: Payment credentials
 const mppMiddleware: MiddlewareHandler | undefined = mppx
   ? createMppPaymentMiddleware({
       mppx,
-      priceFn: (c) => {
-        // For retrieval routes, check if content is paywalled
-        const cidParam = c.req.param('cid');
-        if (cidParam && c.req.method === 'GET') {
-          const policy = pinningService.resolveRetrievalPaymentPolicy(cidParam);
-          if (!policy || policy.priceUsd <= 0) return null; // Free retrieval
-          return String(policy.priceUsd);
-        }
-
-        // For pin/upload routes, price based on content size
-        const sizeBytes = Number(
-          c.req.header('x-content-size-bytes') ?? c.req.header('content-length') ?? '0'
-        );
-        return String(calculatePriceUsd(sizeBytes, x402PricingConfig));
-      },
+      priceFn: resolveMppPrice,
       extractWallet: (authHeader: string) => {
         const credential = Credential.deserialize(authHeader);
         if (!credential.source) {
@@ -125,20 +126,17 @@ const mppChallengeEnhancer: MiddlewareHandler | undefined = mppx
 
       // If x402 returned 402, add the MPP challenge header too
       if (c.res.status === 402 && !c.req.header('Authorization')?.startsWith('Payment ')) {
-        // Calculate price the same way as the per-route middleware
-        let priceUsd: string;
-        const cidParam = c.req.param('cid');
-        if (cidParam && c.req.method === 'GET') {
-          const policy = pinningService.resolveRetrievalPaymentPolicy(cidParam);
-          if (!policy || policy.priceUsd <= 0) return; // Free retrieval, no challenge needed
-          priceUsd = String(policy.priceUsd);
-        } else {
-          const sizeBytes = Number(
-            c.req.header('x-content-size-bytes') ?? c.req.header('content-length') ?? '0'
-          );
-          priceUsd = String(calculatePriceUsd(sizeBytes, x402PricingConfig));
-        }
-        const mppResult = await mppx.charge({ amount: priceUsd })(c.req.raw);
+        const priceUsd = resolveMppPrice(c);
+        if (!priceUsd) return; // Free retrieval, no challenge needed
+
+        // Build a minimal synthetic request for challenge generation.
+        // Avoids passing c.req.raw whose body may already be consumed by x402.
+        // Omitting Authorization header forces a 402 challenge (no credential to verify).
+        const challengeReq = new Request(c.req.url, {
+          method: c.req.method,
+          headers: {},
+        });
+        const mppResult = await mppx.charge({ amount: priceUsd })(challengeReq);
 
         if (mppResult.status === 402) {
           const mppChallenge = mppResult.challenge as Response;
