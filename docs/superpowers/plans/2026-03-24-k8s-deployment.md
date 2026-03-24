@@ -6,7 +6,7 @@
 
 **Architecture:** Two StatefulSets (API + Kubo) with PD-Standard PVCs, Gateway API for external HTTPS, LoadBalancer for IPFS swarm. Single K8s Secret for auth token, ConfigMap for everything else.
 
-**Tech Stack:** Helm v2, GKE Gateway API, PD-Standard storage, Cloud Armor
+**Tech Stack:** Helm v2, GKE Gateway API, PD-Standard storage, Cloud Armor, Google Artifact Registry
 
 **Spec:** `docs/superpowers/specs/2026-03-24-k8s-deployment-design.md`
 
@@ -87,6 +87,133 @@ git commit -m "chore: remove Railway deployment configs, update CLAUDE.md
 Migrating to GKE Autopilot. Local dev still uses docker-compose."
 ```
 
+### Task 3: Add Docker image build and push CI workflow
+
+**Files:**
+- Create: `.github/workflows/docker.yml`
+
+Reference: `/Users/gustavo/taiko/taiko-mono/.github/workflows/eventindexer--docker.yml`
+
+**Prerequisites:** The `GAR_JSON_KEY` GitHub secret must be added to the Tack repo. This is a GCP service account JSON key that grants push access to `us-docker.pkg.dev/evmchain/images/`. Ask a team member with GCP IAM access to create/share the key, or reuse the same one from taiko-mono's repo secrets.
+
+**No imagePullSecrets needed in K8s** — GKE Autopilot in the `evmchain` GCP project can pull from the same Artifact Registry natively.
+
+- [ ] **Step 1: Create the Docker build workflow**
+
+Create `.github/workflows/docker.yml`:
+```yaml
+name: "Build and Push Docker Images"
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-tack-api:
+    name: Build and push tack-api
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Login to GAR
+        uses: docker/login-action@v3
+        with:
+          registry: us-docker.pkg.dev
+          username: _json_key
+          password: ${{ secrets.GAR_JSON_KEY }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            us-docker.pkg.dev/evmchain/images/tack
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          context: .
+          file: ./Dockerfile
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  build-tack-kubo:
+    name: Build and push tack-kubo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Login to GAR
+        uses: docker/login-action@v3
+        with:
+          registry: us-docker.pkg.dev
+          username: _json_key
+          password: ${{ secrets.GAR_JSON_KEY }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            us-docker.pkg.dev/evmchain/images/tack-kubo
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          context: ./kubo
+          file: ./kubo/Dockerfile
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+```
+
+- [ ] **Step 2: Validate workflow YAML syntax**
+
+Run: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/docker.yml'))"`
+Expected: No errors (valid YAML)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add .github/workflows/docker.yml
+git commit -m "ci: add Docker build and push workflow for GAR
+
+Pushes tack and tack-kubo images to us-docker.pkg.dev/evmchain/images/
+on push to main and version tags. Requires GAR_JSON_KEY secret."
+```
+
 ---
 
 ## Workstream B: Helm Chart (ecosystem-k8s-configs)
@@ -102,7 +229,7 @@ git checkout -b tack-helm-chart
 Reference files to follow conventions from:
 - `/Users/gustavo/taiko/ecosystem-k8s-configs/mainnet/facilitator/` — primary reference for all templates
 
-### Task 3: Create Chart.yaml and values.yaml
+### Task 4: Create Chart.yaml and values.yaml
 
 **Files:**
 - Create: `mainnet/tack/Chart.yaml`
@@ -131,7 +258,7 @@ version: 0.1.0
 Create `mainnet/tack/values.yaml`:
 ```yaml
 api:
-  image: "<registry>/tack:0.1.4"
+  image: "us-docker.pkg.dev/evmchain/images/tack:0.1.4"
   resources:
     requests:
       cpu: 250m
@@ -143,7 +270,7 @@ api:
   storageClassName: standard-rwo
 
 kubo:
-  image: "<registry>/tack-kubo:latest"
+  image: "us-docker.pkg.dev/evmchain/images/tack-kubo:main"
   swarmStaticIP: ""
   announceAddress: ""
   resources:
@@ -183,7 +310,7 @@ git add mainnet/tack/Chart.yaml mainnet/tack/values.yaml
 git commit -m "feat(tack): add Helm chart skeleton with Chart.yaml and values.yaml"
 ```
 
-### Task 4: Create ConfigMap template
+### Task 5: Create ConfigMap template
 
 **Files:**
 - Create: `mainnet/tack/templates/config/configmap.yaml`
@@ -246,7 +373,7 @@ git add mainnet/tack/templates/config/configmap.yaml
 git commit -m "feat(tack): add ConfigMap for non-sensitive environment config"
 ```
 
-### Task 5: Create tack-api StatefulSet
+### Task 6: Create tack-api StatefulSet
 
 **Files:**
 - Create: `mainnet/tack/templates/statefulset/tack-api.yaml`
@@ -354,7 +481,7 @@ git add mainnet/tack/templates/statefulset/tack-api.yaml
 git commit -m "feat(tack): add tack-api StatefulSet with SQLite PVC"
 ```
 
-### Task 6: Create tack-kubo StatefulSet
+### Task 7: Create tack-kubo StatefulSet
 
 **Files:**
 - Create: `mainnet/tack/templates/statefulset/tack-kubo.yaml`
@@ -453,7 +580,7 @@ git add mainnet/tack/templates/statefulset/tack-kubo.yaml
 git commit -m "feat(tack): add tack-kubo StatefulSet with IPFS PVC"
 ```
 
-### Task 7: Create Service templates
+### Task 8: Create Service templates
 
 **Files:**
 - Create: `mainnet/tack/templates/service/tack-api.yaml`
@@ -545,7 +672,7 @@ git add mainnet/tack/templates/service/
 git commit -m "feat(tack): add Service resources (API ClusterIP, Kubo ClusterIP, Swarm LB)"
 ```
 
-### Task 8: Create Gateway templates
+### Task 9: Create Gateway templates
 
 **Files:**
 - Create: `mainnet/tack/templates/gateway/gateway-external-http.yaml`
@@ -677,11 +804,11 @@ git add mainnet/tack/templates/gateway/
 git commit -m "feat(tack): add Gateway API resources for external HTTPS with Cloud Armor"
 ```
 
-### Task 9: Final validation — helm template dry run
+### Task 10: Final validation — helm template dry run
 
 - [ ] **Step 1: Run full helm template render**
 
-Run: `helm template tack mainnet/tack/ -n qa --set api.image=ghcr.io/test/tack:0.1.4 --set kubo.image=ghcr.io/test/tack-kubo:latest --set kubo.swarmStaticIP=10.0.0.1 --set config.x402PayTo=0xabc --set config.x402UsdcAssetAddress=0xdef`
+Run: `helm template tack mainnet/tack/ -n qa --set api.image=us-docker.pkg.dev/evmchain/images/tack:0.1.4 --set kubo.image=us-docker.pkg.dev/evmchain/images/tack-kubo:main --set kubo.swarmStaticIP=10.0.0.1 --set config.x402PayTo=0xabc --set config.x402UsdcAssetAddress=0xdef`
 Expected: Valid YAML output with all resources: 2 StatefulSets, 3 Services, 1 ConfigMap, 1 Gateway, 2 HTTPRoutes, 1 GCPBackendPolicy
 
 - [ ] **Step 2: Verify the rendered YAML has no issues**
