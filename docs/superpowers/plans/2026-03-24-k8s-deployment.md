@@ -94,9 +94,9 @@ Migrating to GKE Autopilot. Local dev still uses docker-compose."
 
 Reference: `/Users/gustavo/taiko/taiko-mono/.github/workflows/eventindexer--docker.yml`
 
-**Prerequisites:** The `GAR_JSON_KEY` GitHub secret must be added to the Tack repo. This is a GCP service account JSON key that grants push access to `us-docker.pkg.dev/evmchain/images/`. Ask a team member with GCP IAM access to create/share the key, or reuse the same one from taiko-mono's repo secrets.
+**Prerequisites:** A `GAR_JSON_KEY` GitHub secret must be added to the Tack repo. This is a GCP service account JSON key that grants push access to `us-central1-docker.pkg.dev/mainnet-trailblazer/tack/`. Ask a team member with GCP IAM access to the `mainnet-trailblazer` project to create the Artifact Registry repository `tack` and a service account key with `roles/artifactregistry.writer`.
 
-**No imagePullSecrets needed in K8s** — GKE Autopilot in the `evmchain` GCP project can pull from the same Artifact Registry natively.
+**No imagePullSecrets needed in K8s** — GKE Autopilot in the `mainnet-trailblazer` GCP project can pull from the same Artifact Registry natively.
 
 - [ ] **Step 1: Create the Docker build workflow**
 
@@ -130,7 +130,7 @@ jobs:
       - name: Login to GAR
         uses: docker/login-action@v3
         with:
-          registry: us-docker.pkg.dev
+          registry: us-central1-docker.pkg.dev
           username: _json_key
           password: ${{ secrets.GAR_JSON_KEY }}
 
@@ -142,7 +142,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            us-docker.pkg.dev/evmchain/images/tack
+            us-central1-docker.pkg.dev/mainnet-trailblazer/tack/api
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -170,7 +170,7 @@ jobs:
       - name: Login to GAR
         uses: docker/login-action@v3
         with:
-          registry: us-docker.pkg.dev
+          registry: us-central1-docker.pkg.dev
           username: _json_key
           password: ${{ secrets.GAR_JSON_KEY }}
 
@@ -182,7 +182,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            us-docker.pkg.dev/evmchain/images/tack-kubo
+            us-central1-docker.pkg.dev/mainnet-trailblazer/tack/kubo
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -210,7 +210,7 @@ Expected: No errors (valid YAML)
 git add .github/workflows/docker.yml
 git commit -m "ci: add Docker build and push workflow for GAR
 
-Pushes tack and tack-kubo images to us-docker.pkg.dev/evmchain/images/
+Pushes tack api and kubo images to us-central1-docker.pkg.dev/mainnet-trailblazer/tack/
 on push to main and version tags. Requires GAR_JSON_KEY secret."
 ```
 
@@ -258,7 +258,7 @@ version: 0.1.0
 Create `mainnet/tack/values.yaml`:
 ```yaml
 api:
-  image: "us-docker.pkg.dev/evmchain/images/tack:0.1.4"
+  image: "us-central1-docker.pkg.dev/mainnet-trailblazer/tack/api:0.1.4"
   resources:
     requests:
       cpu: 250m
@@ -270,7 +270,7 @@ api:
   storageClassName: standard-rwo
 
 kubo:
-  image: "us-docker.pkg.dev/evmchain/images/tack-kubo:main"
+  image: "us-central1-docker.pkg.dev/mainnet-trailblazer/tack/kubo:main"
   swarmStaticIP: ""
   announceAddress: ""
   resources:
@@ -808,7 +808,7 @@ git commit -m "feat(tack): add Gateway API resources for external HTTPS with Clo
 
 - [ ] **Step 1: Run full helm template render**
 
-Run: `helm template tack mainnet/tack/ -n qa --set api.image=us-docker.pkg.dev/evmchain/images/tack:0.1.4 --set kubo.image=us-docker.pkg.dev/evmchain/images/tack-kubo:main --set kubo.swarmStaticIP=10.0.0.1 --set config.x402PayTo=0xabc --set config.x402UsdcAssetAddress=0xdef`
+Run: `helm template tack mainnet/tack/ -n qa --set api.image=us-central1-docker.pkg.dev/mainnet-trailblazer/tack/api:0.1.4 --set kubo.image=us-central1-docker.pkg.dev/mainnet-trailblazer/tack/kubo:main --set kubo.swarmStaticIP=10.0.0.1 --set config.x402PayTo=0xabc --set config.x402UsdcAssetAddress=0xdef`
 Expected: Valid YAML output with all resources: 2 StatefulSets, 3 Services, 1 ConfigMap, 1 Gateway, 2 HTTPRoutes, 1 GCPBackendPolicy
 
 - [ ] **Step 2: Verify the rendered YAML has no issues**
