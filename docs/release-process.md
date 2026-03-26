@@ -15,7 +15,23 @@ Image publishing is handled by `.github/workflows/docker.yml` and requires:
 
 - `GAR_JSON_KEY`
 
-GKE rollout is handled by `.github/workflows/deploy-gke.yml`. Its required inputs are documented in `infra/terraform/gcp/README.md`.
+GKE rollout is handled by `.github/workflows/deploy-gke.yml`.
+
+Repository variables for deploy:
+- `GCP_PROJECT_ID`
+- `GKE_CLUSTER_NAME`
+- `GKE_CLUSTER_LOCATION`
+- `TACK_KUBO_SWARM_STATIC_IP`
+- `TACK_KUBO_ANNOUNCE_ADDRESS` (optional; defaults to `/ip4/$TACK_KUBO_SWARM_STATIC_IP/tcp/4001`)
+- `X402_SMOKE_RPC_URL` (optional)
+- `X402_SMOKE_CHAIN_ID` (optional)
+- `X402_SMOKE_CID` (optional)
+
+Repository secrets for deploy:
+- `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`
+- or `GCP_CREDENTIALS_JSON`
+- `X402_SMOKE_PAYER_PRIVATE_KEY` (optional)
+- `ECOSYSTEM_K8S_CONFIGS_TOKEN` (optional, only needed if that repo is private)
 
 ## Cut a release
 
