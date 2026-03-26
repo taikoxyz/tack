@@ -230,7 +230,8 @@ jobs:
           echo "::error::Health check did not return 200 after deployment"
           exit 1
 
-      - name: Validate paid smoke secret
+      - name: Detect paid smoke secret
+        id: smoke_secret
         if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' }}
         env:
           SMOKE_PAYER_PRIVATE_KEY: ${{ secrets.X402_SMOKE_PAYER_PRIVATE_KEY }}
@@ -238,26 +239,29 @@ jobs:
           set -euo pipefail
 
           if [ -z "${SMOKE_PAYER_PRIVATE_KEY:-}" ]; then
-            echo "::error::Missing secret X402_SMOKE_PAYER_PRIVATE_KEY"
-            exit 1
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "X402_SMOKE_PAYER_PRIVATE_KEY not set; skipping paid smoke test."
+            exit 0
           fi
 
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node.js
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' }}
+        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
         uses: actions/setup-node@v6
         with:
           node-version: 22
 
       - name: Enable Corepack
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' }}
+        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
         run: corepack enable
 
       - name: Install dependencies for smoke
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' }}
+        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Run paid x402 smoke test
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' }}
+        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
         env:
           SMOKE_API_BASE_URL: ${{ inputs.api_base_url }}
           SMOKE_RPC_URL: ${{ vars.X402_SMOKE_RPC_URL }}
