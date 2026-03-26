@@ -153,14 +153,11 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: Get GKE credentials
-        run: |
-          gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" \
-            --region "$GKE_CLUSTER_LOCATION" \
-            --project "$GCP_PROJECT_ID"
-        env:
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          GKE_CLUSTER_NAME: ${{ vars.GKE_CLUSTER_NAME }}
-          GKE_CLUSTER_LOCATION: ${{ vars.GKE_CLUSTER_LOCATION }}
+        uses: google-github-actions/get-gke-credentials@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_CLUSTER_LOCATION }}
 
       - name: Deploy Helm release
         env:
@@ -182,7 +179,7 @@ jobs:
             --set "kubo.swarmStaticIP=${SWARM_STATIC_IP}" \
             --set-string "kubo.announceAddress=${announce_address}" \
             --wait \
-            --atomic \
+            --rollback-on-failure \
             --timeout 15m
 
       - name: Verify rollouts
