@@ -2,6 +2,11 @@ import type { Context, Next, MiddlewareHandler } from 'hono';
 import { extractPaymentAuthorizationCredential } from './http.js';
 import type { PaymentResult } from './types.js';
 
+export interface MppPaymentRequirement {
+  amount: string;
+  recipient?: string;
+}
+
 export interface MppChargeChallengeResult {
   status: 402;
   challenge: Response;
@@ -15,17 +20,17 @@ export interface MppChargeSuccessResult {
 export type MppChargeResult = MppChargeChallengeResult | MppChargeSuccessResult;
 
 export interface MppxChargeHandler {
-  charge: (options: { amount: string }) => (req: Request) => Promise<MppChargeResult>;
+  charge: (options: MppPaymentRequirement) => (req: Request) => Promise<MppChargeResult>;
 }
 
 interface MppPaymentMiddlewareConfig {
   mppx: MppxChargeHandler;
-  priceFn: (c: Context) => string | null | Promise<string | null>;
+  requirementFn: (c: Context) => MppPaymentRequirement | null | Promise<MppPaymentRequirement | null>;
   extractWallet: (credential: string) => string;
 }
 
 export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): MiddlewareHandler {
-  const { mppx, priceFn, extractWallet } = config;
+  const { mppx, requirementFn, extractWallet } = config;
 
   return async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
@@ -36,12 +41,14 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
       return next();
     }
 
-    const priceUsd = await priceFn(c);
+    const requirement = await requirementFn(c);
 
     // Free content — no payment required
-    if (priceUsd === null) {
+    if (requirement === null) {
       return next();
     }
+
+    const { amount, recipient } = requirement;
 
     let wallet: string;
     try {
@@ -51,7 +58,7 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
         method: c.req.method,
         headers: {},
       });
-      const challengeResult = await mppx.charge({ amount: priceUsd })(challengeReq);
+      const challengeResult = await mppx.charge({ amount, recipient })(challengeReq);
       if (challengeResult.status === 402) {
         return challengeResult.challenge;
       }
@@ -59,7 +66,7 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
     }
 
     // MPP credential present — verify and settle via mppx
-    const result = await mppx.charge({ amount: priceUsd })(c.req.raw);
+    const result = await mppx.charge({ amount, recipient })(c.req.raw);
 
     if (result.status === 402) {
       // Credential was present but invalid — return MPP-specific 402

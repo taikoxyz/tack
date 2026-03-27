@@ -985,7 +985,7 @@ describe('API integration', () => {
         name: 'Tack',
         description: 'Test agent',
         version: '0.0.1',
-        x402Network: 'eip155:167000',
+        x402Network: 'eip155:8453',
         x402UsdcAssetAddress: '0x2222222222222222222222222222222222222222',
         x402RatePerGbMonthUsd: 0.10,
         x402MinPriceUsd: 0.001,
@@ -1004,7 +1004,7 @@ describe('API integration', () => {
 
     const card = (await response.json()) as {
       payments: {
-        protocols: Array<{ protocol: string; chainId: number }>;
+        protocols: Array<{ protocol: string; chainId?: number; chain?: string }>;
       };
       pricing: {
         pinning: {
@@ -1025,6 +1025,11 @@ describe('API integration', () => {
     expect(card.pricing.pinning.maxDurationMonths).toBe(24);
     expect(card.pricing.pinning.durationHeader).toBe('X-Pin-Duration-Months');
     expect(card.payments.protocols.map((protocol) => protocol.protocol)).toEqual(['x402', 'mpp']);
+    expect(card.payments.protocols[0]).toMatchObject({
+      protocol: 'x402',
+      chainId: 8453,
+    });
+    expect(card.payments.protocols[0]?.chain).toBeUndefined();
   });
 
   it('enforces wallet ownership when listing and deleting pins', async () => {

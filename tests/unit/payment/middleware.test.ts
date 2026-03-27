@@ -22,7 +22,7 @@ describe('createMppPaymentMiddleware', () => {
     const app = new Hono();
     const middleware = createMppPaymentMiddleware({
       mppx: mockMppx,
-      priceFn: () => '0.001',
+      requirementFn: () => ({ amount: '0.001' }),
       extractWallet: () => '0xabcdef1234567890abcdef1234567890abcdef12',
     });
 
@@ -48,7 +48,10 @@ describe('createMppPaymentMiddleware', () => {
     const app = new Hono<Env>();
     const middleware = createMppPaymentMiddleware({
       mppx: mockMppx,
-      priceFn: () => '0.001',
+      requirementFn: () => ({
+        amount: '0.001',
+        recipient: '0x1111111111111111111111111111111111111111',
+      }),
       extractWallet,
     });
 
@@ -67,6 +70,10 @@ describe('createMppPaymentMiddleware', () => {
     expect(body.protocol).toBe('mpp');
     expect(res.headers.get('Payment-Receipt')).toBe('test-receipt');
     expect(extractWallet).toHaveBeenCalledWith('eyJ0ZXN0IjoiY3JlZGVudGlhbCJ9');
+    expect(mockMppx.charge).toHaveBeenCalledWith({
+      amount: '0.001',
+      recipient: '0x1111111111111111111111111111111111111111',
+    });
   });
 
   it('returns 402 when MPP credential is present but invalid', async () => {
@@ -79,7 +86,7 @@ describe('createMppPaymentMiddleware', () => {
     const app = new Hono();
     const middleware = createMppPaymentMiddleware({
       mppx: mockMppx,
-      priceFn: () => '0.001',
+      requirementFn: () => ({ amount: '0.001' }),
       extractWallet: () => '0xabcdef1234567890abcdef1234567890abcdef12',
     });
 
@@ -110,7 +117,10 @@ describe('createMppPaymentMiddleware', () => {
     const app = new Hono();
     const middleware = createMppPaymentMiddleware({
       mppx,
-      priceFn: () => '0.001',
+      requirementFn: () => ({
+        amount: '0.001',
+        recipient: '0x2222222222222222222222222222222222222222',
+      }),
       extractWallet: () => {
         throw new Error('missing source');
       },
@@ -126,15 +136,19 @@ describe('createMppPaymentMiddleware', () => {
     const [challengeRequest] = requests;
     expect(challengeRequest).toBeDefined();
     expect(challengeRequest?.headers.get('Authorization')).toBeNull();
+    expect(mppx.charge).toHaveBeenCalledWith({
+      amount: '0.001',
+      recipient: '0x2222222222222222222222222222222222222222',
+    });
   });
 
-  it('calls next() when priceFn returns null (free content)', async () => {
+  it('calls next() when requirementFn returns null (free content)', async () => {
     const mockMppx = createMockMppx({ status: 402, challenge: new Response('', { status: 402 }) });
 
     const app = new Hono();
     const middleware = createMppPaymentMiddleware({
       mppx: mockMppx,
-      priceFn: () => null,
+      requirementFn: () => null,
       extractWallet: () => '0xabcdef1234567890abcdef1234567890abcdef12',
     });
 

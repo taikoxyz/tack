@@ -8,7 +8,7 @@ describe('paymentChains', () => {
     expect(taiko).toBeDefined();
     expect(taiko!.chainId).toBe(167000);
     expect(taiko!.protocol).toBe('x402');
-    expect(taiko!.x402).toBeDefined();
+    expect(taiko!.x402?.network).toBe('eip155:167000');
   });
 
   it('includes tempo with mpp protocol', () => {

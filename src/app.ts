@@ -263,6 +263,20 @@ function parseRangeHeader(raw: string | null, totalSize: number): ByteRange | nu
   return { start, end: Math.min(parsedEnd, totalSize - 1) };
 }
 
+function parseEip155ChainId(network: string | undefined): number | undefined {
+  if (!network) {
+    return undefined;
+  }
+
+  const match = /^eip155:(\d+)$/.exec(network.trim());
+  if (!match) {
+    return undefined;
+  }
+
+  const chainId = Number(match[1]);
+  return Number.isInteger(chainId) ? chainId : undefined;
+}
+
 function parseDeclaredRequestSize(headers: Headers): number | null {
   const rawCustom = headers.get('x-content-size-bytes');
   const rawContentLength = headers.get('content-length');
@@ -498,16 +512,21 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   app.get('/.well-known/agent.json', (c) => {
     const origin = new URL(c.req.url).origin;
     const agent = services.agentCard;
+    const x402ChainId = parseEip155ChainId(agent?.x402Network);
 
-    const protocols: Array<Record<string, unknown>> = [
-      {
-        protocol: 'x402',
-        chain: 'taiko',
-        chainId: 167000,
-        asset: agent?.x402UsdcAssetAddress,
-        network: agent?.x402Network,
-      },
-    ];
+    const x402Protocol: Record<string, unknown> = {
+      protocol: 'x402',
+      asset: agent?.x402UsdcAssetAddress,
+      network: agent?.x402Network,
+    };
+    if (x402ChainId !== undefined) {
+      x402Protocol.chainId = x402ChainId;
+    }
+    if (x402ChainId === 167000) {
+      x402Protocol.chain = 'taiko';
+    }
+
+    const protocols: Array<Record<string, unknown>> = [x402Protocol];
 
     if (agent?.mppMethod) {
       protocols.push({

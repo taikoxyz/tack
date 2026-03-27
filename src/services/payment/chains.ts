@@ -7,13 +7,11 @@ export const paymentChains: PaymentChain[] = [
     protocol: 'x402',
     rpcUrl: 'https://rpc.mainnet.taiko.xyz',
     asset: {
-      address: process.env.X402_USDC_ASSET_ADDRESS ?? '0x0000000000000000000000000000000000000001',
       decimals: 6,
       symbol: 'USDC',
     },
     x402: {
       network: 'eip155:167000',
-      facilitatorUrl: process.env.X402_FACILITATOR_URL ?? 'https://facilitator.taiko.xyz',
       domainName: 'USD Coin',
       domainVersion: '2',
     },

@@ -6,15 +6,14 @@ export interface PaymentChain {
   protocol: PaymentProtocol;
   rpcUrl: string;
   asset: {
-    address: string;
+    address?: string;
     decimals: number;
     symbol: string;
   };
   x402?: {
     network: string;
-    facilitatorUrl: string;
-    domainName: string;
-    domainVersion: string;
+    domainName?: string;
+    domainVersion?: string;
   };
   mpp?: {
     method: string;

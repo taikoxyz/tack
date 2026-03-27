@@ -24,6 +24,10 @@ describe('extractIpfsCidFromPath', () => {
     expect(extractIpfsCidFromPath('/ipfs/bafy-test-cid')).toBe('bafy-test-cid');
   });
 
+  it('decodes URL-encoded CIDs', () => {
+    expect(extractIpfsCidFromPath('/ipfs/bafy%2Ftest')).toBe('bafy/test');
+  });
+
   it('returns null for non-IPFS paths', () => {
     expect(extractIpfsCidFromPath('/pins')).toBeNull();
   });
@@ -31,5 +35,9 @@ describe('extractIpfsCidFromPath', () => {
   it('returns null when the CID segment is empty or contains nested paths', () => {
     expect(extractIpfsCidFromPath('/ipfs/')).toBeNull();
     expect(extractIpfsCidFromPath('/ipfs/bafy-test-cid/extra')).toBeNull();
+  });
+
+  it('returns null when the CID segment cannot be URL-decoded', () => {
+    expect(extractIpfsCidFromPath('/ipfs/%zz')).toBeNull();
   });
 });

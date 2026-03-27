@@ -1,11 +1,11 @@
 import { decodePaymentRequiredHeader } from '@x402/core/http';
 import type { Context, MiddlewareHandler } from 'hono';
 import { extractPaymentAuthorizationCredential } from './http.js';
-import type { MppxChargeHandler } from './middleware.js';
+import type { MppPaymentRequirement, MppxChargeHandler } from './middleware.js';
 
 interface MppChallengeEnhancerConfig {
   mppx: MppxChargeHandler;
-  priceFn: (c: Context) => string | null | Promise<string | null>;
+  requirementFn: (c: Context) => MppPaymentRequirement | null | Promise<MppPaymentRequirement | null>;
   assetDecimals: number;
 }
 
@@ -21,11 +21,11 @@ function assetAmountToDecimalString(amount: string, decimals: number): string | 
   return fractionalPart.length > 0 ? `${integerPart}.${fractionalPart}` : integerPart;
 }
 
-async function resolveChallengePriceUsd(
+async function resolveChallengeRequirement(
   c: Context,
-  priceFn: (c: Context) => string | null | Promise<string | null>,
+  requirementFn: (c: Context) => MppPaymentRequirement | null | Promise<MppPaymentRequirement | null>,
   assetDecimals: number
-): Promise<string | null> {
+): Promise<MppPaymentRequirement | null> {
   const paymentRequiredHeader = c.res.headers.get('payment-required');
   if (paymentRequiredHeader) {
     try {
@@ -36,7 +36,10 @@ async function resolveChallengePriceUsd(
         if (typeof amount === 'string') {
           const price = assetAmountToDecimalString(amount, assetDecimals);
           if (price !== null) {
-            return price;
+            return {
+              amount: price,
+              recipient: typeof accepted.payTo === 'string' ? accepted.payTo : undefined,
+            };
           }
         }
       }
@@ -45,11 +48,11 @@ async function resolveChallengePriceUsd(
     }
   }
 
-  return priceFn(c);
+  return requirementFn(c);
 }
 
 export function createMppChallengeEnhancer(config: MppChallengeEnhancerConfig): MiddlewareHandler {
-  const { mppx, priceFn, assetDecimals } = config;
+  const { mppx, requirementFn, assetDecimals } = config;
 
   return async (c, next) => {
     await next();
@@ -62,8 +65,8 @@ export function createMppChallengeEnhancer(config: MppChallengeEnhancerConfig): 
       return;
     }
 
-    const priceUsd = await resolveChallengePriceUsd(c, priceFn, assetDecimals);
-    if (!priceUsd) {
+    const requirement = await resolveChallengeRequirement(c, requirementFn, assetDecimals);
+    if (!requirement) {
       return;
     }
 
@@ -73,7 +76,7 @@ export function createMppChallengeEnhancer(config: MppChallengeEnhancerConfig): 
       method: c.req.method,
       headers: {},
     });
-    const mppResult = await mppx.charge({ amount: priceUsd })(challengeReq);
+    const mppResult = await mppx.charge(requirement)(challengeReq);
 
     if (mppResult.status !== 402) {
       return;

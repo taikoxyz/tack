@@ -28,6 +28,7 @@ import {
   type WalletAuthConfig,
   type RequestOwnerIdentity,
 } from './wallet-auth.js';
+import { extractIpfsCidFromPath } from './payment/http.js';
 
 export { calculatePriceUsd, parseDurationMonths } from './payment/pricing.js';
 
@@ -182,20 +183,11 @@ export function resolveWalletFromHeaders(headers: Headers, walletAuthConfig: Wal
   };
 }
 
-function extractCidFromPath(path: string): string | null {
-  const match = /^\/ipfs\/([^/]+)$/.exec(path);
-  if (!match || !match[1]) {
-    return null;
-  }
-
-  return decodeURIComponent(match[1]);
-}
-
 async function resolveRetrievalRequirement(
   context: HTTPRequestContext,
   resolver: RetrievalPaymentResolver
 ): Promise<RetrievalPaymentRequirement | null> {
-  const cid = extractCidFromPath(context.path);
+  const cid = extractIpfsCidFromPath(context.path);
   if (!cid) {
     return null;
   }

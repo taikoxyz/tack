@@ -137,13 +137,16 @@ function resolveUploadPriceUsd(c: Context): number {
 
 // Shared MPP price resolution — single source of truth for both
 // the per-route middleware and the challenge enhancer.
-async function resolveMppPrice(c: Context): Promise<string | null> {
+async function resolveMppRequirement(c: Context): Promise<{ amount: string; recipient: string } | null> {
   if (c.req.path === '/pins') {
     if (c.req.method !== 'POST') {
       return null;
     }
 
-    return String(await resolvePinPriceUsd(c));
+    return {
+      amount: String(await resolvePinPriceUsd(c)),
+      recipient: config.x402PayTo,
+    };
   }
 
   if (c.req.path === '/upload') {
@@ -151,7 +154,10 @@ async function resolveMppPrice(c: Context): Promise<string | null> {
       return null;
     }
 
-    return String(resolveUploadPriceUsd(c));
+    return {
+      amount: String(resolveUploadPriceUsd(c)),
+      recipient: config.x402PayTo,
+    };
   }
 
   const cidParam = extractIpfsCidFromPath(c.req.path);
@@ -161,7 +167,10 @@ async function resolveMppPrice(c: Context): Promise<string | null> {
       return null;
     }
 
-    return String(policy.priceUsd);
+    return {
+      amount: String(policy.priceUsd),
+      recipient: policy.payTo,
+    };
   }
 
   return null;
@@ -171,7 +180,7 @@ async function resolveMppPrice(c: Context): Promise<string | null> {
 const mppMiddleware: MiddlewareHandler | undefined = mppx
   ? createMppPaymentMiddleware({
       mppx,
-      priceFn: resolveMppPrice,
+      requirementFn: resolveMppRequirement,
       extractWallet: (serializedCredential: string) => {
         const credential = Credential.deserialize(serializedCredential);
         if (!credential.source) {
@@ -185,7 +194,7 @@ const mppMiddleware: MiddlewareHandler | undefined = mppx
 const mppChallengeEnhancer: MiddlewareHandler | undefined = mppx
   ? createMppChallengeEnhancer({
       mppx,
-      priceFn: resolveMppPrice,
+      requirementFn: resolveMppRequirement,
       assetDecimals: config.x402UsdcAssetDecimals,
     })
   : undefined;

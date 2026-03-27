@@ -28,5 +28,9 @@ export function extractIpfsCidFromPath(path: string): string | null {
     return null;
   }
 
-  return cid;
+  try {
+    return decodeURIComponent(cid);
+  } catch {
+    return null;
+  }
 }
