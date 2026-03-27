@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serve } from '@hono/node-server';
+import type { Context, MiddlewareHandler } from 'hono';
+import { Credential } from 'mppx';
 import { getConfig } from './config';
 import { createDb } from './db';
 import { PinRepository } from './repositories/pin-repository';
@@ -11,6 +13,19 @@ import { createX402PaymentMiddleware } from './services/x402';
 import { GatewayContentCache } from './services/content-cache';
 import { InMemoryRateLimiter } from './services/rate-limiter';
 import { logger } from './services/logger';
+import { getChainByName } from './services/payment/chains';
+import { createMppChallengeEnhancer } from './services/payment/challenge-enhancer';
+import { extractIpfsCidFromPath } from './services/payment/http';
+import { createMppInstance } from './services/payment/mpp';
+import { createMppPaymentMiddleware } from './services/payment/middleware';
+import {
+  calculatePriceUsd,
+  parseDurationMonths,
+  parseNonNegativeInteger,
+  parseSizeBytesFromPinPayload,
+  type LinearPricingConfig
+} from './services/payment/pricing';
+import { extractWalletFromDid } from './services/payment/wallet';
 
 function getAppVersion(): string {
   try {
@@ -74,9 +89,121 @@ const paymentMiddleware = createX402PaymentMiddleware({
   }
 });
 
+// --- MPP (Machine Payment Protocol) on Tempo ---
+const tempoChain = getChainByName('tempo');
+const mppx = config.mppSecretKey
+  ? createMppInstance(config.x402PayTo, config.mppSecretKey)
+  : null;
+
+const paymentPricingConfig: LinearPricingConfig = {
+  ratePerGbMonthUsd: config.x402RatePerGbMonthUsd,
+  minPriceUsd: config.x402MinPriceUsd,
+  maxPriceUsd: config.x402MaxPriceUsd
+};
+
+async function resolvePinPriceUsd(c: Context): Promise<number> {
+  const durationMonths = parseDurationMonths(
+    c.req.header('x-pin-duration-months'),
+    config.x402DefaultDurationMonths,
+    config.x402MaxDurationMonths
+  );
+  const explicitSize = parseNonNegativeInteger(c.req.header('x-content-size-bytes'));
+  if (explicitSize !== undefined) {
+    return calculatePriceUsd(explicitSize, durationMonths, paymentPricingConfig);
+  }
+
+  try {
+    const body: unknown = await c.req.raw.clone().json();
+    const bodySize = parseSizeBytesFromPinPayload(body);
+    if (bodySize !== undefined) {
+      return calculatePriceUsd(bodySize, durationMonths, paymentPricingConfig);
+    }
+  } catch {
+    // Fall back to the declared request size when the JSON pin payload is unavailable.
+  }
+
+  const fallbackSize = parseNonNegativeInteger(c.req.header('content-length')) ?? 0;
+  return calculatePriceUsd(fallbackSize, durationMonths, paymentPricingConfig);
+}
+
+function resolveUploadPriceUsd(c: Context): number {
+  const sizeBytes =
+    parseNonNegativeInteger(c.req.header('x-content-size-bytes')) ??
+    parseNonNegativeInteger(c.req.header('content-length')) ??
+    0;
+
+  return calculatePriceUsd(sizeBytes, 1, paymentPricingConfig);
+}
+
+// Shared MPP price resolution — single source of truth for both
+// the per-route middleware and the challenge enhancer.
+async function resolveMppRequirement(c: Context): Promise<{ amount: string; recipient: string } | null> {
+  if (c.req.path === '/pins') {
+    if (c.req.method !== 'POST') {
+      return null;
+    }
+
+    return {
+      amount: String(await resolvePinPriceUsd(c)),
+      recipient: config.x402PayTo,
+    };
+  }
+
+  if (c.req.path === '/upload') {
+    if (c.req.method !== 'POST') {
+      return null;
+    }
+
+    return {
+      amount: String(resolveUploadPriceUsd(c)),
+      recipient: config.x402PayTo,
+    };
+  }
+
+  const cidParam = extractIpfsCidFromPath(c.req.path);
+  if (cidParam && c.req.method === 'GET') {
+    const policy = pinningService.resolveRetrievalPaymentPolicy(cidParam);
+    if (!policy || policy.priceUsd <= 0) {
+      return null;
+    }
+
+    return {
+      amount: String(policy.priceUsd),
+      recipient: policy.payTo,
+    };
+  }
+
+  return null;
+}
+
+// MPP per-route middleware: handles Authorization: Payment credentials
+const mppMiddleware: MiddlewareHandler | undefined = mppx
+  ? createMppPaymentMiddleware({
+      mppx,
+      requirementFn: resolveMppRequirement,
+      extractWallet: (serializedCredential: string) => {
+        const credential = Credential.deserialize(serializedCredential);
+        if (!credential.source) {
+          throw new Error('MPP credential missing source field — cannot determine payer wallet');
+        }
+        return extractWalletFromDid(credential.source);
+      },
+    })
+  : undefined;
+
+const mppChallengeEnhancer: MiddlewareHandler | undefined = mppx
+  ? createMppChallengeEnhancer({
+      mppx,
+      requirementFn: resolveMppRequirement,
+      assetDecimals: config.x402UsdcAssetDecimals,
+    })
+  : undefined;
+
 const app = createApp({
   pinningService,
   paymentMiddleware,
+  mppMiddleware,
+  mppChallengeEnhancer,
   walletAuth: {
     secret: config.walletAuthTokenSecret,
     issuer: config.walletAuthTokenIssuer,
@@ -102,8 +229,13 @@ const app = createApp({
     x402UsdcAssetAddress: config.x402UsdcAssetAddress,
     x402RatePerGbMonthUsd: config.x402RatePerGbMonthUsd,
     x402MinPriceUsd: config.x402MinPriceUsd,
+    x402MaxPriceUsd: config.x402MaxPriceUsd,
     x402DefaultDurationMonths: config.x402DefaultDurationMonths,
-    x402MaxDurationMonths: config.x402MaxDurationMonths
+    x402MaxDurationMonths: config.x402MaxDurationMonths,
+    mppMethod: mppx ? tempoChain?.mpp?.method : undefined,
+    mppChainId: mppx ? tempoChain?.chainId : undefined,
+    mppAsset: mppx ? tempoChain?.asset.address : undefined,
+    mppAssetSymbol: mppx ? tempoChain?.asset.symbol : undefined
   }
 });
 
