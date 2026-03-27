@@ -27,7 +27,7 @@ The smoke flow validates the production-critical `POST /pins` payment path:
 Run from repository root:
 
 ```bash
-SMOKE_API_BASE_URL="https://<your-api-domain>" \
+SMOKE_API_BASE_URL="https://tack.taiko.xyz" \
 SMOKE_RPC_URL="https://rpc.mainnet.taiko.xyz" \
 SMOKE_CHAIN_ID="167000" \
 SMOKE_PAYER_PRIVATE_KEY="0x<funded-wallet-private-key>" \
