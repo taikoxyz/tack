@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serve } from '@hono/node-server';
+import { createPublicClient, http } from 'viem';
+import { getTransactionReceipt } from 'viem/actions';
+import { tempo, tempoModerato } from 'viem/chains';
 import type { Context, MiddlewareHandler } from 'hono';
-import { Credential } from 'mppx';
 import { getConfig } from './config';
 import { createDb } from './db';
 import { PinRepository } from './repositories/pin-repository';
@@ -18,14 +20,16 @@ import { createMppChallengeEnhancer } from './services/payment/challenge-enhance
 import { extractIpfsCidFromPath } from './services/payment/http';
 import { createMppInstance } from './services/payment/mpp';
 import { createMppPaymentMiddleware } from './services/payment/middleware';
+import { createTempoPayerResolver, type FetchTempoReceipt } from './services/payment/mpp-payer';
 import {
   calculatePriceUsd,
+  formatUsdAmount,
   parseDurationMonths,
   parseNonNegativeInteger,
   parseSizeBytesFromPinPayload,
+  usdToAssetAmount,
   type LinearPricingConfig
 } from './services/payment/pricing';
-import { extractWalletFromDid } from './services/payment/wallet';
 
 function getAppVersion(): string {
   try {
@@ -91,9 +95,44 @@ const paymentMiddleware = createX402PaymentMiddleware({
 
 // --- MPP (Machine Payment Protocol) on Tempo ---
 const tempoChain = getChainByName('tempo');
+const mppTestnet = config.mppTestnet;
+const tempoViemChain = mppTestnet ? tempoModerato : tempo;
+const tempoRpcUrl = config.mppTempoRpcUrl ?? tempoChain?.rpcUrl;
 const mppx = config.mppSecretKey
-  ? createMppInstance(config.x402PayTo, config.mppSecretKey)
+  ? createMppInstance({
+      payTo: config.x402PayTo,
+      secretKey: config.mppSecretKey,
+      realm: config.publicBaseUrl,
+      testnet: mppTestnet,
+    })
   : null;
+
+// viem public client used to re-read Tempo receipts and derive the
+// verified payer wallet from the on-chain Transfer event. Only created
+// when MPP is enabled so the RPC is never touched unless the operator
+// has explicitly opted in.
+const tempoPublicClient = mppx
+  ? createPublicClient({
+      chain: tempoViemChain,
+      transport: http(tempoRpcUrl),
+    })
+  : null;
+const fetchTempoReceipt: FetchTempoReceipt | null = tempoPublicClient
+  ? async (hash) => {
+      const receipt = await getTransactionReceipt(tempoPublicClient, { hash });
+      return {
+        status: receipt.status,
+        logs: receipt.logs,
+      };
+    }
+  : null;
+
+const mppCurrencyAddress = (
+  mppTestnet
+    ? '0x20c0000000000000000000000000000000000000'
+    : '0x20C000000000000000000000b9537d11c60E8b50'
+) as `0x${string}`;
+const mppCurrencyDecimals = tempoChain?.asset.decimals ?? 6;
 
 const paymentPricingConfig: LinearPricingConfig = {
   ratePerGbMonthUsd: config.x402RatePerGbMonthUsd,
@@ -144,7 +183,7 @@ async function resolveMppRequirement(c: Context): Promise<{ amount: string; reci
     }
 
     return {
-      amount: String(await resolvePinPriceUsd(c)),
+      amount: formatUsdAmount(await resolvePinPriceUsd(c)),
       recipient: config.x402PayTo,
     };
   }
@@ -155,7 +194,7 @@ async function resolveMppRequirement(c: Context): Promise<{ amount: string; reci
     }
 
     return {
-      amount: String(resolveUploadPriceUsd(c)),
+      amount: formatUsdAmount(resolveUploadPriceUsd(c)),
       recipient: config.x402PayTo,
     };
   }
@@ -168,7 +207,7 @@ async function resolveMppRequirement(c: Context): Promise<{ amount: string; reci
     }
 
     return {
-      amount: String(policy.priceUsd),
+      amount: formatUsdAmount(policy.priceUsd),
       recipient: policy.payTo,
     };
   }
@@ -176,17 +215,49 @@ async function resolveMppRequirement(c: Context): Promise<{ amount: string; reci
   return null;
 }
 
-// MPP per-route middleware: handles Authorization: Payment credentials
-const mppMiddleware: MiddlewareHandler | undefined = mppx
+// MPP per-route middleware: handles Authorization: Payment credentials.
+// Ownership is derived from the verified on-chain Transfer event, NOT
+// from the optional (client-controlled) `credential.source` DID.
+const mppMiddleware: MiddlewareHandler | undefined = mppx && fetchTempoReceipt
   ? createMppPaymentMiddleware({
       mppx,
       requirementFn: resolveMppRequirement,
-      extractWallet: (serializedCredential: string) => {
-        const credential = Credential.deserialize(serializedCredential);
-        if (!credential.source) {
-          throw new Error('MPP credential missing source field — cannot determine payer wallet');
-        }
-        return extractWalletFromDid(credential.source);
+      resolveVerifiedPayer: createTempoPayerResolver({
+        fetchReceipt: fetchTempoReceipt,
+        getContext: async (request) => {
+          // Reconstruct the expected on-chain transfer parameters from the
+          // same request the client just paid for. We reuse the hono
+          // context-less requirement resolver via a minimal shim so both
+          // middlewares stay in lockstep on pricing.
+          const shim: Context = {
+            req: {
+              path: new URL(request.url).pathname,
+              method: request.method,
+              header: (name: string) => request.headers.get(name),
+              raw: request,
+            },
+          } as unknown as Context;
+
+          const requirement = await resolveMppRequirement(shim);
+          if (!requirement) {
+            throw new Error('cannot derive MPP requirement for verified payer lookup');
+          }
+
+          const usdAmount = Number(requirement.amount);
+          const { amount } = usdToAssetAmount(usdAmount, mppCurrencyAddress, mppCurrencyDecimals);
+
+          return {
+            currency: mppCurrencyAddress,
+            recipient: requirement.recipient as `0x${string}`,
+            amount,
+          };
+        },
+      }),
+      onPayerResolutionFailure: (error, request) => {
+        logger.error(
+          { err: error, url: request.url, method: request.method },
+          'mpp payer resolution failed after successful charge'
+        );
       },
     })
   : undefined;

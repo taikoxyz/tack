@@ -15,15 +15,17 @@ src/
   services/
     pinning-service.ts        # Core business logic: pin CRUD + upload + replication
     ipfs-rpc-client.ts        # Kubo RPC client (pin/add/cat/unpin)
+    x402.ts                   # x402 (Taiko) payment middleware + retrieval gating
+    wallet-auth.ts            # JWT token create/verify for owner endpoints
     payment/
-      types.ts              # PaymentChain, PaymentResult, PaymentProtocol
-      chains.ts             # Taiko + Tempo chain config
-      middleware.ts         # MPP payment middleware
-      mpp.ts                # mppx instance factory
-      pricing.ts            # Price calculation (shared)
-      wallet.ts             # Address normalization, DID parsing
-      x402-compat.ts        # x402 challenge builder
-    wallet-auth.ts          # JWT token create/verify
+      types.ts                # PaymentChain, PaymentResult, PaymentProtocol
+      chains.ts               # Taiko + Tempo chain config
+      pricing.ts              # Price calc + USD asset/decimal formatting
+      http.ts                 # Shared HTTP helpers (Authorization + /ipfs path)
+      mpp.ts                  # mppx instance factory (Tempo/USDC.e)
+      middleware.ts           # MPP credential → charge + paymentResult
+      challenge-enhancer.ts   # Adds MPP WWW-Authenticate to x402 402s
+      mpp-payer.ts            # Verifies MPP payer from on-chain Transfer event
     rate-limiter.ts           # Per-wallet/IP rate limiting
     content-cache.ts          # In-memory LRU cache for gateway responses
     content-type.ts           # MIME type detection
@@ -34,8 +36,7 @@ tests/
   unit/                       # Unit tests
   integration/                # Integration tests
 docs/
-  railway-deployment.md       # Railway deployment runbook
-  deployment-smoke.md         # x402 smoke test runbook
+  dual-protocol-smoke.md      # Manual smoke runbook (x402 + MPP)
 scripts/
   backup-db.sh                # SQLite backup script
 ```
@@ -76,3 +77,6 @@ scripts/
 - **SQLite single-writer**: Only 1 API replica in production. No WAL mode tricks — just one process.
 - **Rate limiter is in-memory**: Resets on restart. Keyed by wallet address (authenticated) or IP (unauthenticated).
 - **Dual-protocol payments**: Tack accepts both x402 (Taiko/USDC) and MPP (Tempo/USDC.e). Same endpoints serve both. Protocol detection is header-based: `payment-signature` → x402, `Authorization: Payment` → MPP. MPP is opt-in via `MPP_SECRET_KEY` env var.
+- **Dual-challenge 402s**: An unpaid request gets BOTH `payment-required` (x402) and `WWW-Authenticate: Payment` (MPP) in the same 402. `challenge-enhancer.ts` wraps x402 middleware so MPP's `WWW-Authenticate` is grafted onto x402's 402 response post-hoc. Tests live in `tests/integration/app.test.ts > dual-protocol`.
+- **MPP settles before the handler, x402 settles after**: mppx verifies + broadcasts the Tempo transaction during `charge()`, while x402 settles via the facilitator post-response.
+- **MPP ownership comes from on-chain evidence, never `credential.source`**: The MPP credential has an optional `source` DID that is *client-controlled metadata* — `Credential.deserialize` spreads it through unverified, and the Tempo `verify()` never checks it. Trusting `source` would let a paying attacker mint owner-scoped JWTs for any victim wallet (forged `did:pkh:eip155:4217:<victim>`). Instead, `mpp-payer.ts` pulls the settled tx hash out of the mppx `Payment-Receipt` header, re-reads the Tempo receipt via a viem public client, and returns the `from` field of the matching TIP-20 `Transfer`/`TransferWithMemo` event. That EOA is the token holder who authorized the spend and is the canonical payer regardless of fee-payer relaying. Regression test: `tests/integration/app.test.ts > dual-protocol > ignores a forged credential.source`.

@@ -80,3 +80,23 @@ export function usdToAssetAmount(
     asset: assetAddress,
   };
 }
+
+/**
+ * Format a USD amount as a plain decimal string for payment APIs that
+ * accept human-readable prices (e.g. mppx `amount: "0.01"`).
+ *
+ * Avoids scientific notation (`1e-7`) that `Number.toString` emits for
+ * values under 1e-6, which downstream decimal parsers reject.
+ */
+export function formatUsdAmount(usdAmount: number, decimals = 6): string {
+  if (!Number.isFinite(usdAmount) || usdAmount < 0) {
+    throw new Error(`Invalid USD amount: ${usdAmount}`);
+  }
+
+  const factor = 10 ** decimals;
+  const scaled = Math.max(1, Math.round((usdAmount + Number.EPSILON) * factor));
+  const asString = scaled.toString().padStart(decimals + 1, '0');
+  const integerPart = asString.slice(0, asString.length - decimals) || '0';
+  const fractionalPart = asString.slice(asString.length - decimals).replace(/0+$/, '');
+  return fractionalPart.length > 0 ? `${integerPart}.${fractionalPart}` : integerPart;
+}

@@ -31,6 +31,8 @@ export interface AppConfig {
   x402DefaultDurationMonths: number;
   x402MaxDurationMonths: number;
   mppSecretKey?: string;
+  mppTestnet: boolean;
+  mppTempoRpcUrl?: string;
 }
 
 const PLACEHOLDER_EVM_ADDRESSES = new Set([
@@ -164,6 +166,7 @@ export function getConfig(): AppConfig {
   }
 
   const mppSecretKey = process.env.MPP_SECRET_KEY?.trim() || undefined;
+  const mppTempoRpcUrl = process.env.MPP_TEMPO_RPC_URL?.trim() || undefined;
 
   const config: AppConfig = {
     port: Number(process.env.PORT ?? 3000),
@@ -209,7 +212,9 @@ export function getConfig(): AppConfig {
     x402MaxPriceUsd: parseNumber(process.env.X402_MAX_PRICE_USD, 50.0, 'X402_MAX_PRICE_USD'),
     x402DefaultDurationMonths: parsePositiveInteger(process.env.X402_DEFAULT_DURATION_MONTHS, 1, 'X402_DEFAULT_DURATION_MONTHS'),
     x402MaxDurationMonths: parsePositiveInteger(process.env.X402_MAX_DURATION_MONTHS, 24, 'X402_MAX_DURATION_MONTHS'),
-    mppSecretKey
+    mppSecretKey,
+    mppTestnet: parseBoolean(process.env.MPP_TESTNET, false),
+    mppTempoRpcUrl
   };
 
   if (!Number.isInteger(config.walletAuthTokenTtlSeconds) || config.walletAuthTokenTtlSeconds <= 0) {

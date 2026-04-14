@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePriceUsd,
+  formatUsdAmount,
   parseDurationMonths,
   parseNonNegativeInteger,
   parseSizeBytesFromPinPayload,
@@ -74,6 +75,31 @@ describe('parseSizeBytesFromPinPayload', () => {
   it('ignores malformed payloads', () => {
     expect(parseSizeBytesFromPinPayload(null)).toBeUndefined();
     expect(parseSizeBytesFromPinPayload({ meta: { contentSizeBytes: 'invalid' } })).toBeUndefined();
+  });
+});
+
+describe('formatUsdAmount', () => {
+  it('formats whole-dollar and sub-dollar values as plain decimals', () => {
+    expect(formatUsdAmount(0)).toBe('0.000001');
+    expect(formatUsdAmount(0.001)).toBe('0.001');
+    expect(formatUsdAmount(0.01)).toBe('0.01');
+    expect(formatUsdAmount(1)).toBe('1');
+    expect(formatUsdAmount(1.5)).toBe('1.5');
+    expect(formatUsdAmount(50.123456)).toBe('50.123456');
+  });
+
+  it('never emits scientific notation for tiny values', () => {
+    // Native String(1e-7) -> "1e-7", which mppx rejects. The formatter
+    // snaps the minimum to the asset's smallest unit (1 micro-USD by
+    // default) and always returns a plain decimal string.
+    const formatted = formatUsdAmount(1e-7);
+    expect(formatted).not.toContain('e');
+    expect(formatted).toBe('0.000001');
+  });
+
+  it('rejects invalid amounts', () => {
+    expect(() => formatUsdAmount(Number.NaN)).toThrow('Invalid USD amount');
+    expect(() => formatUsdAmount(-1)).toThrow('Invalid USD amount');
   });
 });
 
