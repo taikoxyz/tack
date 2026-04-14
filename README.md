@@ -101,7 +101,7 @@ pnpm build        # Compile TypeScript
 pnpm smoke:x402   # End-to-end x402 payment smoke test
 ```
 
-See `.env.example` for all configuration options. Deployment docs live in `docs/`, including [`docs/dual-protocol-smoke.md`](docs/dual-protocol-smoke.md) for x402 + MPP verification.
+See `.env.example` for all configuration options.
 
 ## License
 

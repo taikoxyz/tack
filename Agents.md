@@ -35,8 +35,6 @@ src/
 tests/
   unit/                       # Unit tests
   integration/                # Integration tests
-docs/
-  dual-protocol-smoke.md      # Manual smoke runbook (x402 + MPP)
 scripts/
   backup-db.sh                # SQLite backup script
 ```
