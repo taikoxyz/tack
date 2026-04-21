@@ -1,4 +1,4 @@
-const PROD_URL = 'https://tack.taiko.xyz';
+const PROD_URL = process.env.LANDING_URL ?? 'https://tack.taiko.xyz';
 
 export function landingPageHtml(): string {
   const o = PROD_URL;
@@ -17,7 +17,7 @@ export function landingPageHtml(): string {
   <meta property="og:url" content="${o}" />
   <meta property="og:site_name" content="Tack" />
 
-  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Tack — Agent-native IPFS. Pay on Taiko or Tempo." />
   <meta name="twitter:description" content="No API keys, no accounts. Your AI agent pays per pin in USDC — x402 on Taiko or MPP on Tempo." />
 
