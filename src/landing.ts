@@ -584,7 +584,7 @@ export function landingPageHtml(): string {
         Let your AI agents pin and retrieve content on IPFS. No API keys, no accounts. Pay per use in USDC via <strong style="color:var(--surface-900);white-space:nowrap;">x402 on Taiko</strong> or USDC.e via <strong style="color:var(--surface-900);white-space:nowrap;">MPP on Tempo</strong> &mdash; same endpoints, pick your rail.
       </p>
       <div class="hero-buttons">
-        <button class="btn-primary" data-copy="${o}" aria-label="Copy API endpoint to clipboard">
+        <button class="btn-primary copy-btn" data-copy="${o}" aria-label="Copy API endpoint to clipboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           <span class="copy-btn-label">Copy endpoint</span>
         </button>
