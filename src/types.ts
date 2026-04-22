@@ -35,3 +35,20 @@ export interface PinResultsResponse {
   count: number;
   results: PinStatusResponse[];
 }
+
+export interface AgentCardConfig {
+  name: string;
+  description: string;
+  version: string;
+  x402Network: string;
+  x402UsdcAssetAddress: string;
+  x402RatePerGbMonthUsd: number;
+  x402MinPriceUsd: number;
+  x402MaxPriceUsd: number;
+  x402DefaultDurationMonths: number;
+  x402MaxDurationMonths: number;
+  mppMethod?: string;
+  mppChainId?: number;
+  mppAsset?: string;
+  mppAssetSymbol?: string;
+}
