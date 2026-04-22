@@ -322,8 +322,16 @@ const app = createApp({
     name: 'Tack',
     description: 'Pin to IPFS, pay with your wallet. No account needed.',
     version: appVersion,
-    x402Network: config.x402Network,
-    x402UsdcAssetAddress: config.x402UsdcAssetAddress,
+    x402Chains: [
+      {
+        network: config.x402Network,
+        usdcAssetAddress: config.x402UsdcAssetAddress,
+      },
+      {
+        network: BASE_CHAIN.network,
+        usdcAssetAddress: BASE_CHAIN.usdcAssetAddress,
+      }
+    ],
     x402RatePerGbMonthUsd: config.x402RatePerGbMonthUsd,
     x402MinPriceUsd: config.x402MinPriceUsd,
     x402MaxPriceUsd: config.x402MaxPriceUsd,
