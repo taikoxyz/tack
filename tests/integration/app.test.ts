@@ -54,6 +54,22 @@ const paymentConfig: X402PaymentConfig = {
   maxDurationMonths: 24
 };
 
+const multiChainPaymentConfig: X402PaymentConfig = {
+  ...paymentConfig,
+  chains: [
+    taikoChain,
+    {
+      network: 'eip155:8453',
+      facilitatorUrl: 'http://localhost:9998',
+      payTo: taikoChain.payTo,
+      usdcAssetAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      usdcAssetDecimals: 6,
+      usdcDomainName: 'USD Coin',
+      usdcDomainVersion: '2'
+    }
+  ]
+};
+
 function extractWallet(paymentPayload: PaymentPayload): string {
   const payload = paymentPayload.payload;
   const authorization = payload.authorization as Record<string, unknown> | undefined;
@@ -89,9 +105,15 @@ const mockFacilitator: FacilitatorClient = {
     signers: Record<string, string[]>;
   }> {
     return Promise.resolve({
-      kinds: [{ x402Version: 2, scheme: 'exact', network: taikoChain.network }],
+      kinds: [
+        { x402Version: 2, scheme: 'exact', network: taikoChain.network },
+        { x402Version: 2, scheme: 'exact', network: 'eip155:8453' }
+      ],
       extensions: [],
-      signers: { [taikoChain.network]: [taikoChain.payTo] }
+      signers: {
+        [taikoChain.network]: [taikoChain.payTo],
+        'eip155:8453': [taikoChain.payTo]
+      }
     });
   }
 };
@@ -1344,6 +1366,37 @@ describe('API integration', () => {
       const body = await res.json() as { type: string; title: string; status: number };
       expect(body.type).toBe('https://mpp.dev/errors/payer-resolution-failed');
       expect(body.status).toBe(500);
+    });
+  });
+
+  describe('multi-chain x402', () => {
+    it('advertises both Taiko and Base in the 402 payment-required header', async () => {
+      const multiChainApp = createApp({
+        pinningService: service,
+        paymentMiddleware: createX402PaymentMiddleware(multiChainPaymentConfig, mockFacilitator),
+        walletAuth: walletAuthConfig,
+        defaultDurationMonths: 1,
+        maxDurationMonths: 24
+      });
+
+      const res = await multiChainApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cid: 'bafy-test' })
+        })
+      );
+
+      expect(res.status).toBe(402);
+
+      const paymentRequiredHeader = res.headers.get('payment-required');
+      expect(paymentRequiredHeader).toBeTruthy();
+
+      const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
+      const networks = paymentRequired.accepts.map((a) => a.network);
+      expect(networks).toEqual(['eip155:167000', 'eip155:8453']);
+      // Price parity: same USD price → same asset amount (both USDC, 6 decimals).
+      expect(paymentRequired.accepts[0].amount).toBe(paymentRequired.accepts[1].amount);
     });
   });
 });
