@@ -9,7 +9,9 @@ Format:
 
 ## [Unreleased]
 
-- None yet.
+### Added
+- Tack now accepts x402 payments on Base mainnet (`eip155:8453`) alongside Taiko Alethia. The same endpoints (`POST /pins`, `POST /upload`, paywalled `GET /ipfs/:cid`) serve both chains — unpaid requests receive a single `402` whose `payment-required` header advertises Taiko USDC and Base USDC at the same USD price. Clients pick whichever chain they already hold USDC on. Base settlement goes through the permissionless PayAI facilitator; no operator-side credentials required.
+- The agent card at `/.well-known/agent.json` now publishes one x402 protocol entry per supported chain (`chain: 'taiko'` and `chain: 'base'`).
 
 ## [v0.2.0] - 2026-04-14
 
