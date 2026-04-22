@@ -1026,6 +1026,8 @@ describe('API integration', () => {
       };
       pricing: {
         pinning: {
+          network?: string;
+          asset?: string;
           ratePerGbMonthUsd: number;
           minPriceUsd: number;
           maxPriceUsd: number;
@@ -1050,6 +1052,9 @@ describe('API integration', () => {
 
     const mppProtocol = card.payments.protocols.find((p) => p.protocol === 'mpp');
     expect(mppProtocol).toMatchObject({ chain: 'tempo', chainId: 4217 });
+
+    expect(card.pricing.pinning.network).toBe('eip155:167000');
+    expect(card.pricing.pinning.asset).toBe('0x2222222222222222222222222222222222222222');
   });
 
   it('enforces wallet ownership when listing and deleting pins', async () => {
