@@ -45,6 +45,8 @@ function knownChainName(chainId: number | undefined): string | undefined {
       return 'taiko';
     case 167009:
       return 'taiko-hekla';
+    case 8453:
+      return 'base';
     default:
       return undefined;
   }
@@ -53,14 +55,19 @@ function knownChainName(chainId: number | undefined): string | undefined {
 function paymentProtocols(agent: AgentCardConfig | undefined): Array<Record<string, unknown>> {
   const protocols: Array<Record<string, unknown>> = [];
 
-  const x402: Record<string, unknown> = {};
-  if (agent?.x402Network) x402.network = agent.x402Network;
-  if (agent?.x402UsdcAssetAddress) x402.asset = agent.x402UsdcAssetAddress;
-  const x402ChainId = parseEip155ChainId(agent?.x402Network);
-  if (x402ChainId !== undefined) x402.chainId = x402ChainId;
-  const x402Chain = knownChainName(x402ChainId);
-  if (x402Chain) x402.chain = x402Chain;
-  protocols.push({ x402 });
+  for (const chain of agent?.x402Chains ?? []) {
+    const x402: Record<string, unknown> = {
+      network: chain.network,
+      asset: chain.usdcAssetAddress
+    };
+    const chainId = parseEip155ChainId(chain.network);
+    if (chainId !== undefined) {
+      x402.chainId = chainId;
+      const chainName = knownChainName(chainId);
+      if (chainName) x402.chain = chainName;
+    }
+    protocols.push({ x402 });
+  }
 
   if (agent?.mppMethod) {
     const mpp: Record<string, unknown> = {
@@ -93,7 +100,8 @@ function dynamicPaymentInfo(agent: AgentCardConfig | undefined): XPaymentInfo {
 }
 
 function describeProtocols(agent: AgentCardConfig | undefined): string {
-  const x402Hint = agent?.x402Network ? `x402 on ${agent.x402Network}` : 'x402';
+  const networks = (agent?.x402Chains ?? []).map((chain) => chain.network).filter(Boolean);
+  const x402Hint = networks.length > 0 ? `x402 on ${networks.join(', ')}` : 'x402';
   if (!agent?.mppMethod) {
     return x402Hint;
   }

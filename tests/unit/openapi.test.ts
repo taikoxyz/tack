@@ -6,8 +6,12 @@ const baseAgent: AgentCardConfig = {
   name: 'Tack',
   description: 'Pin to IPFS, pay with your wallet.',
   version: '0.2.0',
-  x402Network: 'eip155:167000',
-  x402UsdcAssetAddress: '0x07d83526730c7438048D55A4fc0b850e2aaB6f0b',
+  x402Chains: [
+    {
+      network: 'eip155:167000',
+      usdcAssetAddress: '0x07d83526730c7438048D55A4fc0b850e2aaB6f0b'
+    }
+  ],
   x402RatePerGbMonthUsd: 0.1,
   x402MinPriceUsd: 0.001,
   x402MaxPriceUsd: 50,
@@ -53,28 +57,43 @@ describe('buildOpenApiDocument', () => {
     });
   });
 
-  it('exposes a non-default x402 network without hardcoded chain assumptions', () => {
+  it('emits one x402 protocol entry per configured chain', () => {
     const doc = buildOpenApiDocument({
       ...baseInput,
       agentCard: {
         ...baseAgent,
-        x402Network: 'eip155:8453',
-        x402UsdcAssetAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+        x402Chains: [
+          ...baseAgent.x402Chains,
+          {
+            network: 'eip155:8453',
+            usdcAssetAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+          }
+        ]
       }
     });
     const paths = doc.paths as Record<string, Record<string, Record<string, unknown>>>;
     const payment = paths['/pins'].post['x-payment-info'] as Record<string, unknown>;
     const protocols = payment.protocols as Array<Record<string, unknown>>;
+    expect(protocols).toHaveLength(2);
     expect(protocols[0]).toEqual({
+      x402: {
+        network: 'eip155:167000',
+        asset: '0x07d83526730c7438048D55A4fc0b850e2aaB6f0b',
+        chainId: 167000,
+        chain: 'taiko'
+      }
+    });
+    expect(protocols[1]).toEqual({
       x402: {
         network: 'eip155:8453',
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-        chainId: 8453
+        chainId: 8453,
+        chain: 'base'
       }
     });
     const guidance = (doc.info as Record<string, unknown>)['x-guidance'] as string;
+    expect(guidance).toContain('eip155:167000');
     expect(guidance).toContain('eip155:8453');
-    expect(guidance).not.toContain('Taiko Alethia');
   });
 
   it('adds the mpp protocol entry only when agentCard.mppMethod is set', () => {
@@ -133,7 +152,7 @@ describe('buildOpenApiDocument', () => {
   it('represents the optional retrieval paywall on /ipfs/{cid} without fabricating a max', () => {
     const doc = buildOpenApiDocument({
       ...baseInput,
-      agentCard: { ...baseAgent, mppMethod: 'tempo', mppAsset: baseAgent.x402UsdcAssetAddress }
+      agentCard: { ...baseAgent, mppMethod: 'tempo', mppAsset: baseAgent.x402Chains[0].usdcAssetAddress }
     });
     const paths = doc.paths as Record<string, Record<string, Record<string, unknown>>>;
     const get = paths['/ipfs/{cid}'].get;

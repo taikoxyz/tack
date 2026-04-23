@@ -353,7 +353,7 @@ function statusFromError(error: unknown): number {
   return 500;
 }
 
-export type { AgentCardConfig } from './types';
+export type { AgentCardConfig, AgentCardX402Chain } from './types';
 
 export interface AppServices {
   pinningService: PinningService;
@@ -588,21 +588,30 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
   app.get('/.well-known/agent.json', (c) => {
     const origin = new URL(c.req.url).origin;
     const agent = services.agentCard;
-    const x402ChainId = parseEip155ChainId(agent?.x402Network);
 
-    const x402Protocol: Record<string, unknown> = {
-      protocol: 'x402',
-      asset: agent?.x402UsdcAssetAddress,
-      network: agent?.x402Network,
+    const chainNameByChainId: Record<number, string> = {
+      167000: 'taiko',
+      8453: 'base',
     };
-    if (x402ChainId !== undefined) {
-      x402Protocol.chainId = x402ChainId;
-    }
-    if (x402ChainId === 167000) {
-      x402Protocol.chain = 'taiko';
-    }
 
-    const protocols: Array<Record<string, unknown>> = [x402Protocol];
+    const protocols: Array<Record<string, unknown>> = [];
+
+    for (const chain of agent?.x402Chains ?? []) {
+      const chainId = parseEip155ChainId(chain.network);
+      const entry: Record<string, unknown> = {
+        protocol: 'x402',
+        asset: chain.usdcAssetAddress,
+        network: chain.network,
+      };
+      if (chainId !== undefined) {
+        entry.chainId = chainId;
+        const chainName = chainNameByChainId[chainId];
+        if (chainName !== undefined) {
+          entry.chain = chainName;
+        }
+      }
+      protocols.push(entry);
+    }
 
     if (agent?.mppMethod) {
       protocols.push({
@@ -615,6 +624,8 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
         intent: 'charge',
       });
     }
+
+    const primaryX402 = agent?.x402Chains?.[0];
 
     return c.json({
       protocol: 'a2a',
@@ -650,8 +661,8 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
           spec: X402_SPEC_URL,
           clientSdk: '@x402/fetch',
           paymentHeader: 'Payment-Signature',
-          network: agent?.x402Network,
-          asset: agent?.x402UsdcAssetAddress,
+          network: primaryX402?.network,
+          asset: primaryX402?.usdcAssetAddress,
           ratePerGbMonthUsd: agent?.x402RatePerGbMonthUsd,
           minPriceUsd: agent?.x402MinPriceUsd,
           maxPriceUsd: agent?.x402MaxPriceUsd,

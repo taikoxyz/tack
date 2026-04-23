@@ -36,12 +36,16 @@ export interface PinResultsResponse {
   results: PinStatusResponse[];
 }
 
+export interface AgentCardX402Chain {
+  network: string;
+  usdcAssetAddress: string;
+}
+
 export interface AgentCardConfig {
   name: string;
   description: string;
   version: string;
-  x402Network: string;
-  x402UsdcAssetAddress: string;
+  x402Chains: AgentCardX402Chain[];
   x402RatePerGbMonthUsd: number;
   x402MinPriceUsd: number;
   x402MaxPriceUsd: number;
