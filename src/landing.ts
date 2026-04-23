@@ -1165,8 +1165,6 @@ export function landingPageHtml(): string {
       color: var(--ink-50);
     }
     .code-tab-dot { width: 6px; height: 6px; border-radius: 50%; }
-    .code-tab-dot.taiko { background: var(--pink-300); }
-    .code-tab-dot.base  { background: var(--base-300); }
     .code-tab-dot.tempo { background: var(--tempo-300); }
     .code-tab-dot.neutral { background: var(--ink-400); }
     /* Split dot for tabs that serve more than one chain */
