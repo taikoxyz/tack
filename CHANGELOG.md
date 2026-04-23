@@ -11,23 +11,17 @@ Format:
 
 - None yet.
 
-## [v0.2.2] - 2026-04-23
+## [v0.2.1] - 2026-04-23
 
 ### Added
 - Tack now accepts x402 payments on Base mainnet (`eip155:8453`) alongside Taiko Alethia. The same endpoints (`POST /pins`, `POST /upload`, paywalled `GET /ipfs/:cid`) serve both chains — unpaid requests receive a single `402` whose `payment-required` header advertises Taiko USDC and Base USDC at the same USD price. Clients pay on whichever chain they already hold USDC. Base settlement uses the permissionless PayAI facilitator; no operator-side credentials required.
 - The agent card at `/.well-known/agent.json` publishes one x402 protocol entry per supported chain (`chain: 'taiko'` and `chain: 'base'`), so agents can discover both at once.
 - New `GET /openapi.json` serves an OpenAPI 3.1 document describing every route, payment info per endpoint (USD price range, supported protocols and chains derived from runtime config), and the wallet-auth bearer scheme for owner endpoints. Compatible with `@agentcash/discovery` so Tack deployments can be registered on [mppscan.com/discovery](https://mppscan.com/discovery).
+- New `GET /llms.txt` endpoint serves a human- and agent-readable overview of the service: overview, pricing formula (including the max-price cap), authentication model, payment protocols, and endpoint list. Pricing values and MPP availability are interpolated from runtime config so the advertised rate always matches what clients are charged.
 
 ### Changed
 - **Breaking (ops):** Settlement wallets are now configured per chain. `X402_PAY_TO` is replaced by `X402_TAIKO_PAY_TO`, `X402_BASE_PAY_TO`, and `MPP_PAY_TO` (the last required only when MPP is enabled). Reusing a single address across chains is unsafe when that address is a Safe or other contract wallet — CREATE2 addresses are deterministic but the contract must actually be deployed on each chain before funds sent to that address can be controlled. Operators must set each variable to an address they control on the target chain.
-
-## [v0.2.1] - 2026-04-22
-
-### Added
-- New `GET /llms.txt` endpoint serves a human- and agent-readable overview of the service: overview, pricing formula (including the max-price cap that `calculatePriceUsd` enforces), authentication model, payment protocols, and endpoint list. Pricing values and MPP availability are interpolated from runtime config so the advertised rate always matches what clients are charged.
-
-### Changed
-- Landing page rewritten to highlight the dual-rail (x402 on Taiko + MPP on Tempo) payment story and deployed via a dedicated Vercel preview + production workflow.
+- Landing page rewritten to highlight the dual-rail (x402 + MPP) payment story and deployed via a dedicated Vercel preview + production workflow.
 
 ### Fixed
 - `scripts/agent-live` now authenticates owner-endpoint calls (`GET /pins`, `GET /pins/:requestid`) with the bearer wallet-auth token issued by the paid pin response instead of replaying the x402 `payment-signature` header, which is not accepted on owner endpoints. The script also fails loudly when a freshly created pin is missing from the owner list rather than silently reporting success.
@@ -112,8 +106,7 @@ Format:
 ### Docs
 - Added Railway deployment and Taiko x402 smoke runbooks covering volumes, backups, rollback, and go-live validation.
 
-[Unreleased]: https://github.com/taikoxyz/tack/compare/v0.2.2...HEAD
-[v0.2.2]: https://github.com/taikoxyz/tack/releases/tag/v0.2.2
+[Unreleased]: https://github.com/taikoxyz/tack/compare/v0.2.1...HEAD
 [v0.2.1]: https://github.com/taikoxyz/tack/releases/tag/v0.2.1
 [v0.2.0]: https://github.com/taikoxyz/tack/releases/tag/v0.2.0
 [v0.1.6]: https://github.com/taikoxyz/tack/releases/tag/v0.1.6
