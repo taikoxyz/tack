@@ -388,8 +388,8 @@ export function buildOpenApiDocument(input: BuildOpenApiInput): Record<string, u
       securitySchemes: {
         // Declared as apiKey (not http/bearer) because the AgentCash discovery
         // validator's inferAuthMode only recognizes apiKey schemes. The token
-        // is actually a JWT bearer — strict OpenAPI codegen will mis-generate
-        // clients for this scheme; discovery parity is the priority here.
+        // is actually a JWT bearer — strict OpenAPI codegen will produce
+        // incorrect clients for this scheme; discovery parity is the priority.
         walletAuthToken: {
           type: 'apiKey',
           in: 'header',
