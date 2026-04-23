@@ -67,6 +67,13 @@ export function calculatePriceUsd(sizeBytes: number, durationMonths: number, con
   return Math.min(Math.max(computed, config.minPriceUsd), config.maxPriceUsd);
 }
 
+// Single source of truth for the pinning price formula, colocated with
+// calculatePriceUsd above so discovery surfaces (/llms.txt, /openapi.json)
+// cannot drift from the live charge logic.
+export function formatPinningPriceFormula(config: LinearPricingConfig): string {
+  return `min(max($${config.minPriceUsd}, sizeGB × $${config.ratePerGbMonthUsd} × durationMonths), $${config.maxPriceUsd})`;
+}
+
 export function usdToAssetAmount(
   usdAmount: number,
   assetAddress: string,

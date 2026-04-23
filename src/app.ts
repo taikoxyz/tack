@@ -25,8 +25,10 @@ import {
   X402_SPEC_URL,
   type WalletAuthConfig
 } from './services/x402';
-import type { PinStatusValue } from './types';
+import { formatPinningPriceFormula } from './services/payment/pricing';
+import type { AgentCardConfig, PinStatusValue } from './types';
 import { landingPageHtml } from './landing';
+import { buildOpenApiDocument } from './openapi';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
@@ -351,26 +353,7 @@ function statusFromError(error: unknown): number {
   return 500;
 }
 
-export interface AgentCardX402Chain {
-  network: string;
-  usdcAssetAddress: string;
-}
-
-export interface AgentCardConfig {
-  name: string;
-  description: string;
-  version: string;
-  x402Chains: AgentCardX402Chain[];
-  x402RatePerGbMonthUsd: number;
-  x402MinPriceUsd: number;
-  x402MaxPriceUsd: number;
-  x402DefaultDurationMonths: number;
-  x402MaxDurationMonths: number;
-  mppMethod?: string;
-  mppChainId?: number;
-  mppAsset?: string;
-  mppAssetSymbol?: string;
-}
+export type { AgentCardConfig, AgentCardX402Chain } from './types';
 
 export interface AppServices {
   pinningService: PinningService;
@@ -489,6 +472,16 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
   app.use(services.paymentMiddleware);
 
+  app.get('/openapi.json', (c) => {
+    const baseUrl = publicBaseUrl ?? new URL(c.req.url).origin;
+    const document = buildOpenApiDocument({
+      baseUrl,
+      agentCard: services.agentCard,
+      uploadMaxSizeBytes
+    });
+    return c.json(document, 200, { 'Cache-Control': 'public, max-age=3600' });
+  });
+
   app.get('/llms.txt', (c) => {
     const base = publicBaseUrl ?? 'https://tack.taiko.xyz';
     const agent = services.agentCard;
@@ -502,7 +495,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
     const pricingBlock = rate !== undefined && minPrice !== undefined && maxPrice !== undefined && defaultMonths !== undefined && maxMonths !== undefined
       ? `$${rate} / GB / month. Minimum charge $${minPrice} per pin, capped at $${maxPrice} per pin. Pin duration ${defaultMonths}–${maxMonths} months (default: ${defaultMonths} month).
-Price formula: min(max($${minPrice}, sizeGB × $${rate} × durationMonths), $${maxPrice}).`
+Price formula: ${formatPinningPriceFormula({ ratePerGbMonthUsd: rate, minPriceUsd: minPrice, maxPriceUsd: maxPrice })}.`
       : 'Dynamic pricing based on content size and duration. See GET /.well-known/agent.json for the current rate, minimum charge, maximum cap, and duration bounds.';
 
     const protocolsBlock = mppEnabled
