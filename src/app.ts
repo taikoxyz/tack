@@ -25,8 +25,10 @@ import {
   X402_SPEC_URL,
   type WalletAuthConfig
 } from './services/x402';
-import type { PinStatusValue } from './types';
+import { formatPinningPriceFormula } from './services/payment/pricing';
+import type { AgentCardConfig, PinStatusValue } from './types';
 import { landingPageHtml } from './landing';
+import { buildOpenApiDocument } from './openapi';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
@@ -351,22 +353,7 @@ function statusFromError(error: unknown): number {
   return 500;
 }
 
-export interface AgentCardConfig {
-  name: string;
-  description: string;
-  version: string;
-  x402Network: string;
-  x402UsdcAssetAddress: string;
-  x402RatePerGbMonthUsd: number;
-  x402MinPriceUsd: number;
-  x402MaxPriceUsd: number;
-  x402DefaultDurationMonths: number;
-  x402MaxDurationMonths: number;
-  mppMethod?: string;
-  mppChainId?: number;
-  mppAsset?: string;
-  mppAssetSymbol?: string;
-}
+export type { AgentCardConfig, AgentCardX402Chain } from './types';
 
 export interface AppServices {
   pinningService: PinningService;
@@ -485,6 +472,16 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
   app.use(services.paymentMiddleware);
 
+  app.get('/openapi.json', (c) => {
+    const baseUrl = publicBaseUrl ?? new URL(c.req.url).origin;
+    const document = buildOpenApiDocument({
+      baseUrl,
+      agentCard: services.agentCard,
+      uploadMaxSizeBytes
+    });
+    return c.json(document, 200, { 'Cache-Control': 'public, max-age=3600' });
+  });
+
   app.get('/llms.txt', (c) => {
     const base = publicBaseUrl ?? 'https://tack.taiko.xyz';
     const agent = services.agentCard;
@@ -498,7 +495,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
     const pricingBlock = rate !== undefined && minPrice !== undefined && maxPrice !== undefined && defaultMonths !== undefined && maxMonths !== undefined
       ? `$${rate} / GB / month. Minimum charge $${minPrice} per pin, capped at $${maxPrice} per pin. Pin duration ${defaultMonths}–${maxMonths} months (default: ${defaultMonths} month).
-Price formula: min(max($${minPrice}, sizeGB × $${rate} × durationMonths), $${maxPrice}).`
+Price formula: ${formatPinningPriceFormula({ ratePerGbMonthUsd: rate, minPriceUsd: minPrice, maxPriceUsd: maxPrice })}.`
       : 'Dynamic pricing based on content size and duration. See GET /.well-known/agent.json for the current rate, minimum charge, maximum cap, and duration bounds.';
 
     const protocolsBlock = mppEnabled
@@ -591,21 +588,30 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
   app.get('/.well-known/agent.json', (c) => {
     const origin = new URL(c.req.url).origin;
     const agent = services.agentCard;
-    const x402ChainId = parseEip155ChainId(agent?.x402Network);
 
-    const x402Protocol: Record<string, unknown> = {
-      protocol: 'x402',
-      asset: agent?.x402UsdcAssetAddress,
-      network: agent?.x402Network,
+    const chainNameByChainId: Record<number, string> = {
+      167000: 'taiko',
+      8453: 'base',
     };
-    if (x402ChainId !== undefined) {
-      x402Protocol.chainId = x402ChainId;
-    }
-    if (x402ChainId === 167000) {
-      x402Protocol.chain = 'taiko';
-    }
 
-    const protocols: Array<Record<string, unknown>> = [x402Protocol];
+    const protocols: Array<Record<string, unknown>> = [];
+
+    for (const chain of agent?.x402Chains ?? []) {
+      const chainId = parseEip155ChainId(chain.network);
+      const entry: Record<string, unknown> = {
+        protocol: 'x402',
+        asset: chain.usdcAssetAddress,
+        network: chain.network,
+      };
+      if (chainId !== undefined) {
+        entry.chainId = chainId;
+        const chainName = chainNameByChainId[chainId];
+        if (chainName !== undefined) {
+          entry.chain = chainName;
+        }
+      }
+      protocols.push(entry);
+    }
 
     if (agent?.mppMethod) {
       protocols.push({
@@ -618,6 +624,8 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
         intent: 'charge',
       });
     }
+
+    const primaryX402 = agent?.x402Chains?.[0];
 
     return c.json({
       protocol: 'a2a',
@@ -653,8 +661,8 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
           spec: X402_SPEC_URL,
           clientSdk: '@x402/fetch',
           paymentHeader: 'Payment-Signature',
-          network: agent?.x402Network,
-          asset: agent?.x402UsdcAssetAddress,
+          network: primaryX402?.network,
+          asset: primaryX402?.usdcAssetAddress,
           ratePerGbMonthUsd: agent?.x402RatePerGbMonthUsd,
           minPriceUsd: agent?.x402MinPriceUsd,
           maxPriceUsd: agent?.x402MaxPriceUsd,
