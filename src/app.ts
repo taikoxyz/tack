@@ -25,6 +25,7 @@ import {
   X402_SPEC_URL,
   type WalletAuthConfig
 } from './services/x402';
+import { formatPinningPriceFormula } from './services/payment/pricing';
 import type { AgentCardConfig, PinStatusValue } from './types';
 import { landingPageHtml } from './landing';
 import { buildOpenApiDocument } from './openapi';
@@ -494,7 +495,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
     const pricingBlock = rate !== undefined && minPrice !== undefined && maxPrice !== undefined && defaultMonths !== undefined && maxMonths !== undefined
       ? `$${rate} / GB / month. Minimum charge $${minPrice} per pin, capped at $${maxPrice} per pin. Pin duration ${defaultMonths}–${maxMonths} months (default: ${defaultMonths} month).
-Price formula: min(max($${minPrice}, sizeGB × $${rate} × durationMonths), $${maxPrice}).`
+Price formula: ${formatPinningPriceFormula({ ratePerGbMonthUsd: rate, minPriceUsd: minPrice, maxPriceUsd: maxPrice })}.`
       : 'Dynamic pricing based on content size and duration. See GET /.well-known/agent.json for the current rate, minimum charge, maximum cap, and duration bounds.';
 
     const protocolsBlock = mppEnabled

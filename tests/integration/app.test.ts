@@ -535,6 +535,25 @@ describe('API integration', () => {
     expect(agentCard.links.ipfsPinningSpec).toBe('https://ipfs.github.io/pinning-services-api-spec/');
   });
 
+  it('serves the OpenAPI 3.1 document at /openapi.json', async () => {
+    const response = await app.request('http://localhost/openapi.json');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect(response.headers.get('cache-control')).toContain('max-age=3600');
+
+    const doc = (await response.json()) as {
+      openapi: string;
+      paths: Record<string, unknown>;
+      components: { securitySchemes: { walletAuthToken: { type: string } } };
+    };
+
+    expect(doc.openapi).toBe('3.1.0');
+    expect(Object.keys(doc.paths)).toEqual(
+      expect.arrayContaining(['/pins', '/pins/{requestid}', '/upload', '/ipfs/{cid}'])
+    );
+    expect(doc.components.securitySchemes.walletAuthToken.type).toBe('apiKey');
+  });
+
   it('includes X-Request-Id and enriched body in 402 responses', async () => {
     const unpaid = await app.request(
       new Request('http://localhost/pins', {

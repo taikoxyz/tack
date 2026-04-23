@@ -1,3 +1,4 @@
+import { formatPinningPriceFormula } from './services/payment/pricing';
 import type { AgentCardConfig } from './types';
 
 export interface BuildOpenApiInput {
@@ -107,12 +108,13 @@ function buildGuidance(input: BuildOpenApiInput): string {
   const agent = input.agentCard;
   const rate = agent?.x402RatePerGbMonthUsd;
   const minPrice = agent?.x402MinPriceUsd;
+  const maxPrice = agent?.x402MaxPriceUsd;
   const defaultMonths = agent?.x402DefaultDurationMonths;
   const maxMonths = agent?.x402MaxDurationMonths;
   const protocols = describeProtocols(agent);
 
-  const pricingLine = rate !== undefined && minPrice !== undefined && defaultMonths !== undefined && maxMonths !== undefined
-    ? `Pinning is priced at $${rate}/GB/month with a $${minPrice} minimum. Pin duration is ${defaultMonths}–${maxMonths} months (default ${defaultMonths}). Final amount: max(min, sizeGB × rate × durationMonths).`
+  const pricingLine = rate !== undefined && minPrice !== undefined && maxPrice !== undefined && defaultMonths !== undefined && maxMonths !== undefined
+    ? `Pinning is priced at $${rate}/GB/month, clamped to $${minPrice}–$${maxPrice} per pin. Pin duration is ${defaultMonths}–${maxMonths} months (default ${defaultMonths}). Final amount: ${formatPinningPriceFormula({ ratePerGbMonthUsd: rate, minPriceUsd: minPrice, maxPriceUsd: maxPrice })}.`
     : 'Pinning uses dynamic pricing based on content size and duration. The exact rate, minimum, and bounds are advertised in GET /.well-known/agent.json.';
 
   return [
@@ -376,6 +378,10 @@ export function buildOpenApiDocument(input: BuildOpenApiInput): Record<string, u
     },
     components: {
       securitySchemes: {
+        // Declared as apiKey (not http/bearer) because the AgentCash discovery
+        // validator's inferAuthMode only recognizes apiKey schemes. The token
+        // is actually a JWT bearer — strict OpenAPI codegen will mis-generate
+        // clients for this scheme; discovery parity is the priority here.
         walletAuthToken: {
           type: 'apiKey',
           in: 'header',
