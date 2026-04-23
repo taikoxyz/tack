@@ -302,6 +302,7 @@ const mppChallengeEnhancer: MiddlewareHandler | undefined = mppx
   ? createMppChallengeEnhancer({
       mppx,
       requirementFn: resolveMppRequirement,
+      assetDecimals: config.x402UsdcAssetDecimals,
     })
   : undefined;
 
