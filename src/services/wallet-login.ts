@@ -176,7 +176,7 @@ function parseSiweMessage(message: string): ParsedSiweMessage {
   }
 
   return {
-    domain: domainMatch[1]!,
+    domain: domainMatch[1],
     address: getAddress(address),
     uri,
     version,

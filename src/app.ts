@@ -1111,9 +1111,10 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       throw new ValidationError('meta must be an object with string values');
     }
 
+    const meta = payload.meta;
     const record = privateObjects.updateObject(c.req.param('objectId'), owner, {
       name,
-      meta: payload.meta as Record<string, string> | undefined
+      meta: meta === undefined ? undefined : meta
     });
     return c.json(toPrivateObjectResponse(record));
   });
@@ -1125,7 +1126,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     return c.body(null, 202);
   });
 
-  app.post('/private/objects/:objectId/renew', async (c) => {
+  app.post('/private/objects/:objectId/renew', (c) => {
     const privateObjects = requirePrivateObjectService(services);
     const owner = requireOwnerWallet(c);
     const paymentResult = c.get('paymentResult');
