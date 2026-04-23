@@ -64,7 +64,7 @@ Request:
 ```json
 {
   "address": "0x1111111111111111111111111111111111111111",
-  "chainId": 8453
+  "network": "eip155:8453"
 }
 ```
 
@@ -74,6 +74,8 @@ Response:
 {
   "message": "example.com wants you to sign in with your Ethereum account:\n0x1111111111111111111111111111111111111111\n\nSign in to Tack to access wallet-owned storage.\n\nURI: https://example.com\nVersion: 1\nChain ID: 8453\nNonce: 6c4b0c1c2a7e4e2c\nIssued At: 2026-04-23T12:00:00.000Z\nExpiration Time: 2026-04-23T12:10:00.000Z",
   "nonce": "6c4b0c1c2a7e4e2c",
+  "network": "eip155:8453",
+  "chainId": 8453,
   "expiresAt": "2026-04-23T12:10:00.000Z"
 }
 ```
@@ -201,6 +203,7 @@ The missing piece is a way to authenticate later without creating or renewing an
 Validation rules:
 
 - Normalize the requested EVM address to lowercase.
+- Accept `network` as a CAIP-2 EVM network string such as `eip155:8453`. Also accept numeric `chainId` as a convenience and normalize it to `network` internally.
 - Generate at least 128 bits of nonce entropy.
 - Store the canonical SIWE message plus a hash of the nonce in SQLite. The nonce hash is the lookup/replay key; the full message is retained for exact comparison during verification.
 - Expire challenges after 10 minutes.
@@ -219,6 +222,15 @@ Signature verification:
 - If EIP-1271 verification is not configured, fail contract-wallet login with a clear 400/422 error rather than pretending only EOAs exist.
 
 This gives developers a standard wallet login flow while preserving Tack's stateless bearer token model for API calls.
+
+### OWS compatibility
+
+The auth flow is directly compatible with Open Wallet Standard clients:
+
+- OWS models EVM chains with CAIP-2 IDs such as `eip155:8453`, which is why `POST /auth/challenge` accepts `network`.
+- The SIWE message is plain UTF-8 text and is signed with EIP-191 `personal_sign` semantics. OWS signs this through `ows sign message --chain eip155:8453 --message "$SIWE_MESSAGE" --json`.
+- Do not use EIP-712 typed data for Tack login in v1. SIWE/EIP-191 is the wallet-compatible path across OWS CLI, SDK, and normal browser wallets.
+- The returned bearer token is a Tack session token, not an OWS API key. Clients should never send OWS API keys or wallet passphrases to Tack.
 
 ### Tighten payment-derived identity
 
