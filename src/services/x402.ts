@@ -74,8 +74,13 @@ export type RetrievalPaymentResolver = (
   cid: string
 ) => RetrievalPaymentRequirement | null | Promise<RetrievalPaymentRequirement | null>;
 
+export type PrivateObjectRenewalResolver = (
+  objectId: string
+) => { sizeBytes: number } | null | Promise<{ sizeBytes: number } | null>;
+
 export interface X402PaymentMiddlewareOptions {
   resolveRetrievalPayment?: RetrievalPaymentResolver;
+  resolvePrivateObjectRenewal?: PrivateObjectRenewalResolver;
 }
 
 const PAYMENT_REQUIRED_HEADER = 'PAYMENT-REQUIRED';
@@ -111,6 +116,29 @@ function resolveUploadSizeBytes(context: HTTPRequestContext): number {
     parseNonNegativeInteger(context.adapter.getHeader('content-length')) ??
     0
   );
+}
+
+function resolvePrivateObjectSizeBytes(context: HTTPRequestContext): number {
+  return parseNonNegativeInteger(context.adapter.getHeader('x-content-size-bytes')) ?? 0;
+}
+
+function extractPrivateObjectRenewalId(path: string): string | null {
+  const prefix = '/private/objects/';
+  const suffix = '/renew';
+  if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+    return null;
+  }
+
+  const objectId = path.slice(prefix.length, -suffix.length);
+  if (objectId.length === 0 || objectId.includes('/')) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(objectId);
+  } catch {
+    return null;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -501,6 +529,7 @@ export function createX402PaymentMiddleware(
   }
 
   const retrievalResolver = options?.resolveRetrievalPayment;
+  const privateObjectRenewalResolver = options?.resolvePrivateObjectRenewal;
 
   // When a single facilitator is injected (tests), reuse it for every chain.
   // In production each chain gets its own HTTPFacilitatorClient.
@@ -548,8 +577,57 @@ export function createX402PaymentMiddleware(
       mimeType: 'application/json',
       unpaidResponseBody: makeUnpaidResponseBody('Upload content to IPFS and pin it.'),
       settlementFailedResponseBody: makeSettlementFailedResponseBody()
+    },
+    'POST /private/objects': {
+      accepts: config.chains.map((chain) => ({
+        scheme: 'exact' as const,
+        network: chain.network,
+        payTo: chain.payTo,
+        extra: { name: chain.usdcDomainName, version: chain.usdcDomainVersion },
+        price: (context: HTTPRequestContext) => {
+          const sizeBytes = resolvePrivateObjectSizeBytes(context);
+          const durationMonths = parseDurationMonths(
+            context.adapter.getHeader('x-storage-duration-months'),
+            config.defaultDurationMonths,
+            config.maxDurationMonths
+          );
+          const usdPrice = calculatePriceUsd(sizeBytes, durationMonths, config);
+          return usdToAssetAmount(usdPrice, chain.usdcAssetAddress, chain.usdcAssetDecimals);
+        }
+      })),
+      description: 'Create private object',
+      mimeType: 'application/json',
+      unpaidResponseBody: makeUnpaidResponseBody('Store a private wallet-owned object.', config),
+      settlementFailedResponseBody: makeSettlementFailedResponseBody()
     }
   };
+
+  if (privateObjectRenewalResolver) {
+    routes['POST /private/objects/[objectId]/renew'] = {
+      accepts: config.chains.map((chain) => ({
+        scheme: 'exact' as const,
+        network: chain.network,
+        payTo: chain.payTo,
+        extra: { name: chain.usdcDomainName, version: chain.usdcDomainVersion },
+        price: async (context: HTTPRequestContext) => {
+          const objectId = extractPrivateObjectRenewalId(context.path);
+          const renewal = objectId ? await privateObjectRenewalResolver(objectId) : null;
+          const sizeBytes = renewal?.sizeBytes ?? 0;
+          const durationMonths = parseDurationMonths(
+            context.adapter.getHeader('x-storage-duration-months'),
+            config.defaultDurationMonths,
+            config.maxDurationMonths
+          );
+          const usdPrice = calculatePriceUsd(sizeBytes, durationMonths, config);
+          return usdToAssetAmount(usdPrice, chain.usdcAssetAddress, chain.usdcAssetDecimals);
+        }
+      })),
+      description: 'Renew private object storage',
+      mimeType: 'application/json',
+      unpaidResponseBody: makeUnpaidResponseBody('Renew private object retention.', config),
+      settlementFailedResponseBody: makeSettlementFailedResponseBody()
+    };
+  }
 
   if (retrievalResolver) {
     routes['GET /ipfs/[cid]'] = {

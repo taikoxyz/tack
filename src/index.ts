@@ -8,10 +8,13 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getConfig } from './config';
 import { createDb } from './db';
 import { PinRepository } from './repositories/pin-repository';
+import { PrivateObjectRepository } from './repositories/private-object-repository';
 import { WalletAuthChallengeRepository } from './repositories/wallet-auth-challenge-repository';
 import { IpfsRpcClient } from './services/ipfs-rpc-client';
 import { createApp } from './app';
 import { PinningService } from './services/pinning-service';
+import { LocalPrivateObjectStorage } from './services/private-object-storage';
+import { PrivateObjectService } from './services/private-object-service';
 import { WalletLoginService } from './services/wallet-login';
 import { createX402PaymentMiddleware } from './services/x402';
 import { GatewayContentCache } from './services/content-cache';
@@ -49,6 +52,7 @@ const config = getConfig();
 const appVersion = getAppVersion();
 const db = createDb(config.dbPath);
 const repository = new PinRepository(db);
+const privateObjectRepository = new PrivateObjectRepository(db);
 const walletAuthConfig = {
   secret: config.walletAuthTokenSecret,
   issuer: config.walletAuthTokenIssuer,
@@ -79,6 +83,10 @@ const pinningService = new PinningService(repository, ipfsClient, config.delegat
   maxGatewayContentSizeBytes: config.gatewayMaxContentSizeBytes,
   replicas: replicaClients
 });
+const privateObjectService = new PrivateObjectService(
+  privateObjectRepository,
+  new LocalPrivateObjectStorage(config.privateStoragePath)
+);
 // Build the x402 chains array with the operator-configured primary chain
 // first (Taiko by default) and Base always appended. If the operator has
 // explicitly set X402_NETWORK to Base, treat Base as the primary and skip
@@ -126,6 +134,14 @@ const paymentMiddleware = createX402PaymentMiddleware({
       payTo: policy.payTo,
       priceUsd: policy.priceUsd
     };
+  },
+  resolvePrivateObjectRenewal: (objectId) => {
+    const record = privateObjectRepository.findById(objectId);
+    if (!record) {
+      return null;
+    }
+
+    return { sizeBytes: record.size_bytes };
   }
 });
 
@@ -248,6 +264,34 @@ async function resolveMppRequirement(c: Context): Promise<{ amount: string; reci
     };
   }
 
+  if (c.req.path === '/private/objects' && c.req.method === 'POST') {
+    const sizeBytes = parseNonNegativeInteger(c.req.header('x-content-size-bytes')) ?? 0;
+    const durationMonths = parseDurationMonths(
+      c.req.header('x-storage-duration-months'),
+      config.x402DefaultDurationMonths,
+      config.x402MaxDurationMonths
+    );
+    return {
+      amount: formatUsdAmount(calculatePriceUsd(sizeBytes, durationMonths, paymentPricingConfig)),
+      recipient: config.mppPayTo,
+    };
+  }
+
+  const privateRenewMatch = /^\/private\/objects\/([^/]+)\/renew$/.exec(c.req.path);
+  if (privateRenewMatch && c.req.method === 'POST') {
+    const objectId = decodeURIComponent(privateRenewMatch[1] ?? '');
+    const record = privateObjectRepository.findById(objectId);
+    const durationMonths = parseDurationMonths(
+      c.req.header('x-storage-duration-months'),
+      config.x402DefaultDurationMonths,
+      config.x402MaxDurationMonths
+    );
+    return {
+      amount: formatUsdAmount(calculatePriceUsd(record?.size_bytes ?? 0, durationMonths, paymentPricingConfig)),
+      recipient: config.mppPayTo,
+    };
+  }
+
   const cidParam = extractIpfsCidFromPath(c.req.path);
   if (cidParam && c.req.method === 'GET') {
     const policy = pinningService.resolveRetrievalPaymentPolicy(cidParam);
@@ -321,6 +365,7 @@ const mppChallengeEnhancer: MiddlewareHandler | undefined = mppx
 
 const app = createApp({
   pinningService,
+  privateObjectService,
   paymentMiddleware,
   mppMiddleware,
   mppChallengeEnhancer,
@@ -328,6 +373,7 @@ const app = createApp({
   walletLoginService,
   gatewayCacheControlMaxAgeSeconds: config.gatewayCacheControlMaxAgeSeconds,
   uploadMaxSizeBytes: config.uploadMaxSizeBytes,
+  privateObjectMaxSizeBytes: config.privateObjectMaxSizeBytes,
   publicBaseUrl: config.publicBaseUrl,
   trustProxy: config.trustProxy,
   trustedProxyCidrs: config.trustedProxyCidrs,

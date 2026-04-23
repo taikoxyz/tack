@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Hono, type MiddlewareHandler } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
   GatewayTimeoutError,
@@ -12,6 +12,8 @@ import {
 import { isTrustedProxy } from './lib/proxy-trust';
 import { createExternalRequestUrlMiddleware } from './lib/request-url';
 import { toPinStatusResponse, type PinningService } from './services/pinning-service';
+import { type PrivateObjectService } from './services/private-object-service';
+import type { StoredPrivateObjectRecord } from './repositories/private-object-repository';
 import type { InMemoryRateLimiter } from './services/rate-limiter';
 import { logger } from './services/logger';
 import { createContentDispositionHeader, shouldServeContentAsAttachment } from './services/content-type';
@@ -164,6 +166,106 @@ function issueWalletAuthToken(
   c.header(WALLET_AUTH_TOKEN_RESPONSE_HEADER, token.token);
   c.header(WALLET_AUTH_TOKEN_EXPIRES_AT_RESPONSE_HEADER, token.expiresAt);
   c.header('Cache-Control', 'no-store');
+}
+
+function requirePrivateObjectService(services: AppServices): PrivateObjectService {
+  if (!services.privateObjectService) {
+    throw new HTTPException(404, { message: 'private storage is not enabled' });
+  }
+
+  return services.privateObjectService;
+}
+
+function toPrivateObjectResponse(record: StoredPrivateObjectRecord): Record<string, unknown> {
+  return {
+    id: record.id,
+    name: record.name ?? undefined,
+    contentType: record.content_type,
+    size: record.size_bytes,
+    sha256: record.sha256,
+    created: record.created,
+    updated: record.updated,
+    expiresAt: record.expires_at ?? undefined,
+    private: true,
+    meta: record.meta
+  };
+}
+
+function parseRequiredObjectSize(headers: Headers): number {
+  const raw = headers.get('x-content-size-bytes');
+  const parsed = raw === null ? NaN : Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new ValidationError('X-Content-Size-Bytes header is required');
+  }
+  return parsed;
+}
+
+function parseStorageDurationMonths(headers: Headers, defaultMonths: number, maxMonths: number): number {
+  return parseDurationMonths(headers.get('x-storage-duration-months'), defaultMonths, maxMonths);
+}
+
+function parseObjectMeta(value: FormDataEntryValue | string | null): Record<string, string> {
+  if (value === null || value === undefined || value === '') {
+    return {};
+  }
+
+  if (typeof value !== 'string') {
+    throw new ValidationError('meta must be a JSON object string');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new ValidationError('meta must be valid JSON');
+  }
+
+  if (!isRecordOfStrings(parsed)) {
+    throw new ValidationError('meta must be an object with string values');
+  }
+
+  return parsed;
+}
+
+async function parsePrivateObjectUpload(c: {
+  req: {
+    header: (name: string) => string | undefined;
+    formData: () => Promise<FormData>;
+    arrayBuffer: () => Promise<ArrayBuffer>;
+  };
+}): Promise<{
+  content: ArrayBuffer;
+  name?: string;
+  contentType: string;
+  meta: Record<string, string>;
+}> {
+  const contentType = c.req.header('content-type') ?? 'application/octet-stream';
+  if (contentType.toLowerCase().startsWith('multipart/form-data')) {
+    const formData = await c.req.formData();
+    const upload = formData.get('file');
+    if (!(upload instanceof File)) {
+      throw new ValidationError('Expected multipart form field "file"');
+    }
+
+    const nameField = formData.get('name');
+    const name = typeof nameField === 'string' && nameField.trim().length > 0
+      ? nameField
+      : upload.name || undefined;
+
+    return {
+      content: await upload.arrayBuffer(),
+      name,
+      contentType: upload.type || 'application/octet-stream',
+      meta: parseObjectMeta(formData.get('meta'))
+    };
+  }
+
+  return {
+    content: await c.req.arrayBuffer(),
+    name: c.req.header('x-object-name'),
+    contentType,
+    meta: parseObjectMeta(c.req.header('x-object-meta') ?? null)
+  };
 }
 
 async function parseJsonBody(c: { req: { json: () => Promise<unknown> } }): Promise<unknown> {
@@ -358,6 +460,7 @@ export type { AgentCardConfig, AgentCardX402Chain } from './types';
 
 export interface AppServices {
   pinningService: PinningService;
+  privateObjectService?: PrivateObjectService;
   paymentMiddleware: MiddlewareHandler;
   mppMiddleware?: MiddlewareHandler;
   mppChallengeEnhancer?: MiddlewareHandler;
@@ -365,6 +468,7 @@ export interface AppServices {
   walletLoginService?: WalletLoginService;
   gatewayCacheControlMaxAgeSeconds?: number;
   uploadMaxSizeBytes?: number;
+  privateObjectMaxSizeBytes?: number;
   publicBaseUrl?: string;
   trustProxy?: boolean;
   trustedProxyCidrs?: string[];
@@ -396,6 +500,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const cacheControlMaxAgeSeconds = services.gatewayCacheControlMaxAgeSeconds ?? DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS;
   const uploadMaxSizeBytes = services.uploadMaxSizeBytes ?? DEFAULT_UPLOAD_MAX_SIZE_BYTES;
+  const privateObjectMaxSizeBytes = services.privateObjectMaxSizeBytes ?? uploadMaxSizeBytes;
   const publicBaseUrl = services.publicBaseUrl;
   const trustProxy = services.trustProxy ?? false;
   const trustedProxyCidrs = services.trustedProxyCidrs ?? [];
@@ -463,6 +568,8 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     app.use('/pins', services.mppMiddleware);
     app.use('/upload', services.mppMiddleware);
     app.use('/ipfs/*', services.mppMiddleware);
+    app.use('/private/objects', services.mppMiddleware);
+    app.use('/private/objects/*', services.mppMiddleware);
   }
 
   // MPP challenge enhancer wraps x402 middleware — must be registered BEFORE x402
@@ -471,6 +578,8 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     app.use('/pins', services.mppChallengeEnhancer);
     app.use('/upload', services.mppChallengeEnhancer);
     app.use('/ipfs/*', services.mppChallengeEnhancer);
+    app.use('/private/objects', services.mppChallengeEnhancer);
+    app.use('/private/objects/*', services.mppChallengeEnhancer);
   }
 
   app.use(services.paymentMiddleware);
@@ -829,6 +938,184 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     const cid = await services.pinningService.uploadContent(upload, upload.name || 'upload.bin');
 
     return c.json({ cid }, 201);
+  });
+
+  app.post('/private/objects', async (c) => {
+    const privateObjects = requirePrivateObjectService(services);
+    const paymentResult = c.get('paymentResult');
+    const paidWallet = paymentResult?.wallet ?? requirePaidWallet(c.req.raw.headers);
+    const declaredSize = parseRequiredObjectSize(c.req.raw.headers);
+    if (declaredSize > privateObjectMaxSizeBytes) {
+      throw new PayloadTooLargeError(`Private object exceeds ${privateObjectMaxSizeBytes} bytes`);
+    }
+
+    const upload = await parsePrivateObjectUpload(c);
+    if (upload.content.byteLength !== declaredSize) {
+      throw new ValidationError('X-Content-Size-Bytes must match object size');
+    }
+
+    if (upload.content.byteLength > privateObjectMaxSizeBytes) {
+      throw new PayloadTooLargeError(`Private object exceeds ${privateObjectMaxSizeBytes} bytes`);
+    }
+
+    const durationMonths = parseStorageDurationMonths(
+      c.req.raw.headers,
+      services.defaultDurationMonths ?? 1,
+      services.maxDurationMonths ?? 24
+    );
+    const paymentStatus = paymentResult?.protocol === 'mpp' ? 'paid' : 'pending';
+    const record = await privateObjects.createObject({
+      owner: paidWallet,
+      name: upload.name,
+      contentType: upload.contentType,
+      meta: upload.meta,
+      content: upload.content,
+      durationMonths,
+      paymentStatus
+    });
+
+    if (paymentStatus === 'pending') {
+      c.get('paymentSettlementCallbacks')?.push({
+        onSettlementSuccess: () => privateObjects.markPaid(record.id),
+        onSettlementFailure: () => privateObjects.markFailedAndDeleteBytes(record.id)
+      });
+    }
+
+    issueWalletAuthToken(c, paidWallet, services.walletAuth);
+    return c.json(toPrivateObjectResponse(record), 201);
+  });
+
+  app.get('/private/objects', (c) => {
+    const privateObjects = requirePrivateObjectService(services);
+    const owner = requireOwnerWallet(c);
+    const result = privateObjects.listObjects({
+      owner,
+      name: c.req.query('name'),
+      before: c.req.query('before'),
+      after: c.req.query('after'),
+      limit: parseLimit(c.req.query('limit')),
+      offset: parseOffset(c.req.query('offset'))
+    });
+
+    return c.json({
+      count: result.count,
+      results: result.results.map((record) => toPrivateObjectResponse(record))
+    });
+  });
+
+  app.get('/private/objects/:objectId', (c) => {
+    const privateObjects = requirePrivateObjectService(services);
+    const owner = requireOwnerWallet(c);
+    const record = privateObjects.getObject(c.req.param('objectId'), owner);
+    return c.json(toPrivateObjectResponse(record));
+  });
+
+  async function privateObjectContentResponse(c: Context<AppEnv>, headOnly: boolean): Promise<Response> {
+    const privateObjects = requirePrivateObjectService(services);
+    const owner = requireOwnerWallet(c);
+    const objectId = c.req.param('objectId');
+    if (!objectId) {
+      throw new NotFoundError('Private object was not found');
+    }
+    const resolved = await privateObjects.getObjectContent(objectId, owner);
+    const totalSize = resolved.content.byteLength;
+    const etag = `"${resolved.record.sha256}"`;
+    const rangeHeader = c.req.header('range') ?? null;
+    const parsedRange = parseRangeHeader(rangeHeader, totalSize);
+    const headers = new Headers({
+      'Content-Type': resolved.record.content_type,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+      ETag: etag,
+      'Accept-Ranges': 'bytes'
+    });
+
+    if (shouldServeContentAsAttachment(resolved.record.content_type)) {
+      headers.set('Content-Disposition', createContentDispositionHeader(resolved.record.name));
+    }
+
+    if (!rangeHeader && ifNoneMatchIncludesEtag(c.req.header('if-none-match') ?? null, etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+
+    if (rangeHeader && !parsedRange) {
+      headers.set('Content-Range', `bytes */${totalSize}`);
+      return new Response(null, { status: 416, headers });
+    }
+
+    if (parsedRange) {
+      const chunk = new Uint8Array(resolved.content).subarray(parsedRange.start, parsedRange.end + 1);
+      headers.set('Content-Range', `bytes ${parsedRange.start}-${parsedRange.end}/${totalSize}`);
+      headers.set('Content-Length', String(chunk.byteLength));
+      return new Response(headOnly ? null : chunk, { status: 206, headers });
+    }
+
+    headers.set('Content-Length', String(totalSize));
+    return new Response(headOnly ? null : resolved.content, { status: 200, headers });
+  }
+
+  app.get('/private/objects/:objectId/content', (c) => {
+    return privateObjectContentResponse(c, false);
+  });
+
+  app.on('HEAD', '/private/objects/:objectId/content', (c) => {
+    return privateObjectContentResponse(c, true);
+  });
+
+  app.patch('/private/objects/:objectId', async (c) => {
+    const privateObjects = requirePrivateObjectService(services);
+    const owner = requireOwnerWallet(c);
+    const body = await parseJsonBody(c);
+    if (!body || typeof body !== 'object') {
+      throw new ValidationError('Payload must be an object');
+    }
+
+    const payload = body as Record<string, unknown>;
+    const name = payload.name === undefined
+      ? undefined
+      : payload.name === null
+        ? null
+        : typeof payload.name === 'string'
+          ? payload.name
+          : undefined;
+    if (payload.name !== undefined && name === undefined) {
+      throw new ValidationError('name must be a string or null');
+    }
+
+    if (payload.meta !== undefined && !isRecordOfStrings(payload.meta)) {
+      throw new ValidationError('meta must be an object with string values');
+    }
+
+    const record = privateObjects.updateObject(c.req.param('objectId'), owner, {
+      name,
+      meta: payload.meta as Record<string, string> | undefined
+    });
+    return c.json(toPrivateObjectResponse(record));
+  });
+
+  app.delete('/private/objects/:objectId', async (c) => {
+    const privateObjects = requirePrivateObjectService(services);
+    const owner = requireOwnerWallet(c);
+    await privateObjects.deleteObject(c.req.param('objectId'), owner);
+    return c.body(null, 202);
+  });
+
+  app.post('/private/objects/:objectId/renew', async (c) => {
+    const privateObjects = requirePrivateObjectService(services);
+    const owner = requireOwnerWallet(c);
+    const paymentResult = c.get('paymentResult');
+    const paidWallet = paymentResult?.wallet ?? requirePaidWallet(c.req.raw.headers);
+    if (paidWallet !== owner) {
+      throw new HTTPException(403, { message: 'renewal payment wallet must match object owner' });
+    }
+
+    const durationMonths = parseStorageDurationMonths(
+      c.req.raw.headers,
+      services.defaultDurationMonths ?? 1,
+      services.maxDurationMonths ?? 24
+    );
+    const record = privateObjects.renewObject(c.req.param('objectId'), owner, durationMonths);
+    return c.json(toPrivateObjectResponse(record));
   });
 
   app.get('/ipfs/:cid', async (c) => {

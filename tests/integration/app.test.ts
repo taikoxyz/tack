@@ -1,5 +1,8 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from '@x402/core/http';
 import type { FacilitatorClient } from '@x402/core/server';
 import type { PaymentPayload, PaymentRequirements } from '@x402/core/types';
@@ -8,13 +11,17 @@ import { createApp } from '../../src/app';
 import { createDb } from '../../src/db';
 import { GatewayTimeoutError, UpstreamServiceError } from '../../src/lib/errors';
 import { PinRepository } from '../../src/repositories/pin-repository';
+import { PrivateObjectRepository } from '../../src/repositories/private-object-repository';
 import { WalletAuthChallengeRepository } from '../../src/repositories/wallet-auth-challenge-repository';
 import type { IpfsClient } from '../../src/services/ipfs-rpc-client';
 import { GatewayContentCache } from '../../src/services/content-cache';
 import { PinningService } from '../../src/services/pinning-service';
+import { LocalPrivateObjectStorage } from '../../src/services/private-object-storage';
+import { PrivateObjectService } from '../../src/services/private-object-service';
 import { InMemoryRateLimiter } from '../../src/services/rate-limiter';
 import { WalletLoginService } from '../../src/services/wallet-login';
 import {
+  createWalletAuthToken,
   createX402PaymentMiddleware,
   WALLET_AUTH_TOKEN_EXPIRES_AT_RESPONSE_HEADER,
   WALLET_AUTH_TOKEN_RESPONSE_HEADER,
@@ -232,6 +239,9 @@ async function paidRequest(
 describe('API integration', () => {
   let db: Database.Database;
   let service: PinningService;
+  let privateObjectService: PrivateObjectService;
+  let privateObjectRepository: PrivateObjectRepository;
+  let privateStorageDir: string;
   let app: ReturnType<typeof createApp>;
   let ipfsClient: IpfsClient & {
     pinAdd: ReturnType<typeof vi.fn>;
@@ -252,11 +262,16 @@ describe('API integration', () => {
           payTo: policy.payTo,
           priceUsd: policy.priceUsd
         };
+      },
+      resolvePrivateObjectRenewal: (objectId) => {
+        const record = privateObjectRepository.findById(objectId);
+        return record ? { sizeBytes: record.size_bytes } : null;
       }
     });
 
     return createApp({
       pinningService: service,
+      privateObjectService,
       paymentMiddleware,
       walletAuth: walletAuthConfig,
       walletLoginService: new WalletLoginService(new WalletAuthChallengeRepository(db), {
@@ -267,13 +282,16 @@ describe('API integration', () => {
       }),
       defaultDurationMonths: 1,
       maxDurationMonths: 24,
+      privateObjectMaxSizeBytes: 1024 * 1024,
       ...overrides
     });
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createDb(':memory:');
     const repository = new PinRepository(db);
+    privateObjectRepository = new PrivateObjectRepository(db);
+    privateStorageDir = await mkdtemp(join(tmpdir(), 'tack-private-app-'));
     ipfsClient = {
       pinAdd: vi.fn().mockResolvedValue(undefined),
       pinRm: vi.fn().mockResolvedValue(undefined),
@@ -285,7 +303,15 @@ describe('API integration', () => {
       contentCache: new GatewayContentCache(10 * 1024 * 1024),
       maxGatewayContentSizeBytes: 10 * 1024 * 1024
     });
+    privateObjectService = new PrivateObjectService(
+      privateObjectRepository,
+      new LocalPrivateObjectStorage(privateStorageDir)
+    );
     app = buildApp();
+  });
+
+  afterEach(async () => {
+    await rm(privateStorageDir, { recursive: true, force: true });
   });
 
   it('creates and fetches a pin request', async () => {
@@ -524,6 +550,87 @@ describe('API integration', () => {
     expect(getRes.headers.get('etag')).toBe('"bafy-uploaded-cid"');
     const bytes = new Uint8Array(await getRes.arrayBuffer());
     expect(new TextDecoder().decode(bytes)).toBe('hello world');
+  });
+
+  it('creates and reads a paid private object', async () => {
+    const objectBody = new TextEncoder().encode('private memory');
+    const createRes = await paidRequest(app, 'http://localhost/private/objects', walletA, () => {
+      const form = new FormData();
+      form.append('file', new File([objectBody], 'memory.txt', { type: 'text/plain' }));
+      return {
+        method: 'POST',
+        headers: {
+          'x-content-size-bytes': String(objectBody.byteLength),
+          'x-storage-duration-months': '1'
+        },
+        body: form
+      };
+    });
+
+    expect(createRes.status).toBe(201);
+    const ownerToken = extractIssuedOwnerToken(createRes);
+    const created = await createRes.json() as { id: string; name: string; size: number; private: boolean };
+    expect(created.id).toMatch(/^obj_/);
+    expect(created.name).toBe('memory.txt');
+    expect(created.size).toBe(objectBody.byteLength);
+    expect(created.private).toBe(true);
+
+    const metadataRes = await app.request(
+      new Request(`http://localhost/private/objects/${created.id}`, {
+        headers: ownerAuthHeaders(ownerToken)
+      })
+    );
+    expect(metadataRes.status).toBe(200);
+
+    const contentRes = await app.request(
+      new Request(`http://localhost/private/objects/${created.id}/content`, {
+        headers: ownerAuthHeaders(ownerToken)
+      })
+    );
+    expect(contentRes.status).toBe(200);
+    expect(contentRes.headers.get('cache-control')).toBe('private, no-store');
+    expect(contentRes.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(await contentRes.text()).toBe('private memory');
+  });
+
+  it('hides private objects from another wallet', async () => {
+    const objectBody = new TextEncoder().encode('secret');
+    const createRes = await paidRequest(app, 'http://localhost/private/objects', walletA, () => {
+      const form = new FormData();
+      form.append('file', new File([objectBody], 'secret.txt', { type: 'text/plain' }));
+      return {
+        method: 'POST',
+        headers: { 'x-content-size-bytes': String(objectBody.byteLength) },
+        body: form
+      };
+    });
+    expect(createRes.status).toBe(201);
+    const created = await createRes.json() as { id: string };
+    const otherToken = createWalletAuthToken(walletB, walletAuthConfig).token;
+
+    const hidden = await app.request(
+      new Request(`http://localhost/private/objects/${created.id}`, {
+        headers: ownerAuthHeaders(otherToken)
+      })
+    );
+
+    expect(hidden.status).toBe(404);
+  });
+
+  it('rejects private object uploads when declared size does not match bytes', async () => {
+    const objectBody = new TextEncoder().encode('secret');
+    const createRes = await paidRequest(app, 'http://localhost/private/objects', walletA, () => {
+      const form = new FormData();
+      form.append('file', new File([objectBody], 'secret.txt', { type: 'text/plain' }));
+      return {
+        method: 'POST',
+        headers: { 'x-content-size-bytes': String(objectBody.byteLength + 1) },
+        body: form
+      };
+    });
+
+    expect(createRes.status).toBe(400);
+    expect(await createRes.json()).toEqual({ error: 'X-Content-Size-Bytes must match object size' });
   });
 
   it('serves gateway content with content-type detection, range support, and cache hits', async () => {
@@ -1245,6 +1352,12 @@ describe('API integration', () => {
         if (c.req.path === '/upload' && c.req.method === 'POST') {
           return { amount: '0.001', recipient: taikoChain.payTo };
         }
+        if (c.req.path === '/private/objects' && c.req.method === 'POST') {
+          return { amount: '0.001', recipient: taikoChain.payTo };
+        }
+        if (/^\/private\/objects\/[^/]+\/renew$/.test(c.req.path) && c.req.method === 'POST') {
+          return { amount: '0.001', recipient: taikoChain.payTo };
+        }
         return null;
       };
 
@@ -1328,6 +1441,38 @@ describe('API integration', () => {
       };
       expect(listed.count).toBe(1);
       expect(listed.results[0].pin.cid).toBe('bafy-mpp-paid');
+    });
+
+    it('creates private objects with MPP credentials', async () => {
+      const stub = createStubMppxHandler();
+      const dualApp = buildDualApp(stub);
+      const objectBody = new TextEncoder().encode('mpp private memory');
+      const form = new FormData();
+      form.append('file', new File([objectBody], 'mpp.txt', { type: 'text/plain' }));
+
+      const res = await dualApp.request(
+        new Request('http://localhost/private/objects', {
+          method: 'POST',
+          headers: {
+            'authorization': 'Payment stub-credential',
+            'x-content-size-bytes': String(objectBody.byteLength)
+          },
+          body: form
+        })
+      );
+
+      expect(res.status).toBe(201);
+      expect(res.headers.get('Payment-Receipt')).toBe('receipt-0.001');
+      const ownerToken = extractIssuedOwnerToken(res);
+      const body = await res.json() as { id: string };
+
+      const contentRes = await dualApp.request(
+        new Request(`http://localhost/private/objects/${body.id}/content`, {
+          headers: ownerAuthHeaders(ownerToken)
+        })
+      );
+      expect(contentRes.status).toBe(200);
+      expect(await contentRes.text()).toBe('mpp private memory');
     });
 
     it('ignores a forged credential.source and assigns ownership to the verified payer', async () => {
