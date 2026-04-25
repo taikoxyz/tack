@@ -25,7 +25,7 @@ import {
   X402_SPEC_URL,
   type WalletAuthConfig
 } from './services/x402';
-import { formatPinningPriceFormula } from './services/payment/pricing';
+import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromPinPayload } from './services/payment/pricing';
 import type { AgentCardConfig, PinStatusValue } from './types';
 import { landingPageHtml } from './landing';
 import { buildOpenApiDocument } from './openapi';
@@ -702,10 +702,18 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       services.defaultDurationMonths ?? 1,
       services.maxDurationMonths ?? 24
     );
+
+    const sizeFromHeader = parseNonNegativeInteger(c.req.header('x-content-size-bytes'));
+    const sizeFromBody = sizeFromHeader === undefined
+      ? parseSizeBytesFromPinPayload(body)
+      : undefined;
+    const sizeBytes = sizeFromHeader ?? sizeFromBody;
+
     const result = await services.pinningService.createPin({
       ...body,
       owner: paidWallet,
-      durationMonths
+      durationMonths,
+      sizeBytes
     });
     return c.json(toPinStatusResponse(result), 202);
   });

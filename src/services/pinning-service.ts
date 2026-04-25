@@ -15,6 +15,7 @@ export interface CreatePinInput {
   meta?: Record<string, string>;
   owner: string;
   durationMonths?: number;
+  sizeBytes?: number;
 }
 
 export interface ReplacePinInput {
@@ -140,7 +141,7 @@ export class PinningService {
       created: now,
       updated: now,
       expires_at: computeExpiresAt(input.durationMonths),
-      size_bytes: null
+      size_bytes: typeof input.sizeBytes === 'number' && input.sizeBytes > 0 ? input.sizeBytes : null
     };
 
     this.repository.create(record);

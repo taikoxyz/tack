@@ -1389,6 +1389,26 @@ describe('API integration', () => {
     });
   });
 
+  it('persists size_bytes from x-content-size-bytes header on POST /pins', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-content-size-bytes': '8675309'
+      },
+      body: JSON.stringify({ cid: 'bafy-sized-integration' })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(8675309);
+  });
+
   describe('multi-chain x402', () => {
     it('advertises both Taiko and Base in the 402 payment-required header', async () => {
       const multiChainApp = createApp({

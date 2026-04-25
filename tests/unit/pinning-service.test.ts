@@ -404,4 +404,25 @@ describe('PinningService', () => {
     const stored = repository.findByRequestId(replaced.requestid);
     expect(stored?.size_bytes).toBe(4242);
   });
+
+  it('persists size_bytes when supplied to createPin', async () => {
+    const result = await service.createPin({ cid: 'bafy-sized', owner: wallet, sizeBytes: 4242 });
+
+    const stored = repository.findByRequestId(result.requestid);
+    expect(stored?.size_bytes).toBe(4242);
+  });
+
+  it('persists size_bytes as null when not supplied to createPin', async () => {
+    const result = await service.createPin({ cid: 'bafy-no-size', owner: wallet });
+
+    const stored = repository.findByRequestId(result.requestid);
+    expect(stored?.size_bytes).toBeNull();
+  });
+
+  it('treats sizeBytes of 0 as unknown (persists null)', async () => {
+    const result = await service.createPin({ cid: 'bafy-zero', owner: wallet, sizeBytes: 0 });
+
+    const stored = repository.findByRequestId(result.requestid);
+    expect(stored?.size_bytes).toBeNull();
+  });
 });
