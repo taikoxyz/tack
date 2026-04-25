@@ -34,64 +34,102 @@ export interface PaymentSummary {
 export class PaymentRepository {
   constructor(private readonly db: Database.Database) {}
 
-  insert(record: PaymentRecord): void {
+  insert(record: PaymentRecord): 'inserted' | 'duplicate' {
     if (record.tx_hash) {
       const existing = this.db
         .prepare('SELECT id FROM payments WHERE protocol = ? AND tx_hash = ?')
         .get(record.protocol, record.tx_hash);
       if (existing) {
-        return;
+        return 'duplicate';
       }
     }
 
-    this.db
-      .prepare(
-        `INSERT INTO payments (
-          id, occurred_at, protocol, chain_id, payer_wallet,
-          asset_address, asset_decimals, amount_atomic, amount_usd,
-          endpoint, request_id, tx_hash, pin_request_id
-        ) VALUES (
-          @id, @occurred_at, @protocol, @chain_id, @payer_wallet,
-          @asset_address, @asset_decimals, @amount_atomic, @amount_usd,
-          @endpoint, @request_id, @tx_hash, @pin_request_id
-        )`
-      )
-      .run(record);
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO payments (
+            id, occurred_at, protocol, chain_id, payer_wallet,
+            asset_address, asset_decimals, amount_atomic, amount_usd,
+            endpoint, request_id, tx_hash, pin_request_id
+          ) VALUES (
+            @id, @occurred_at, @protocol, @chain_id, @payer_wallet,
+            @asset_address, @asset_decimals, @amount_atomic, @amount_usd,
+            @endpoint, @request_id, @tx_hash, @pin_request_id
+          )`
+        )
+        .run(record);
+      return 'inserted';
+    } catch (err: unknown) {
+      // Defense-in-depth: if the partial-unique index throws (race or
+      // SELECT bypassed), surface duplicate signal rather than crashing.
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return 'duplicate';
+      }
+      throw err;
+    }
   }
 
   findById(id: string): PaymentRecord | null {
-    const row = this.db.prepare('SELECT * FROM payments WHERE id = ?').get(id) as PaymentRecord | undefined;
+    const row = this.db
+      .prepare(
+        `SELECT id, occurred_at, protocol, chain_id, payer_wallet,
+                asset_address, asset_decimals, amount_atomic, amount_usd,
+                endpoint, request_id, tx_hash, pin_request_id
+         FROM payments WHERE id = ?`
+      )
+      .get(id) as PaymentRecord | undefined;
     return row ?? null;
   }
 
   summarizeWindow(window: PaymentWindow): PaymentSummary {
-    const rows = this.db
+    const groupRows = this.db
       .prepare(
-        `SELECT protocol, amount_usd, payer_wallet
+        `SELECT protocol, COUNT(*) AS n, COALESCE(SUM(amount_usd), 0) AS total_usd
+         FROM payments
+         WHERE occurred_at >= ? AND occurred_at < ?
+         GROUP BY protocol`
+      )
+      .all(window.start, window.end) as Array<{ protocol: string; n: number; total_usd: number }>;
+
+    const distinctRow = this.db
+      .prepare(
+        `SELECT COUNT(DISTINCT payer_wallet) AS n
          FROM payments
          WHERE occurred_at >= ? AND occurred_at < ?`
       )
-      .all(window.start, window.end) as Array<{ protocol: 'x402' | 'mpp'; amount_usd: number; payer_wallet: string }>;
+      .get(window.start, window.end) as { n: number };
 
     const summary: PaymentSummary = {
       totalUsd: 0,
-      count: rows.length,
-      uniquePayers: new Set(rows.map((r) => r.payer_wallet)).size,
+      count: 0,
+      uniquePayers: distinctRow.n,
       byProtocol: {
         x402: { totalUsd: 0, count: 0 },
         mpp: { totalUsd: 0, count: 0 },
       },
     };
 
-    for (const row of rows) {
-      summary.totalUsd += row.amount_usd;
-      summary.byProtocol[row.protocol].totalUsd += row.amount_usd;
-      summary.byProtocol[row.protocol].count += 1;
+    for (const row of groupRows) {
+      summary.totalUsd += row.total_usd;
+      summary.count += row.n;
+      if (row.protocol === 'x402' || row.protocol === 'mpp') {
+        summary.byProtocol[row.protocol] = { totalUsd: row.total_usd, count: row.n };
+      }
     }
 
     return summary;
   }
 
+  /**
+   * Returns wallets whose ALL-TIME first payment occurred within the
+   * window. The result is stable only when the window is fully closed —
+   * i.e., no future payment with `occurred_at < window.start` can arrive
+   * for a wallet that's currently a "first-time payer" in the window.
+   *
+   * The weekly digest job satisfies this by running on a window that has
+   * already ended. Do not call this for an open/in-progress window if
+   * you need idempotent reporting.
+   */
   firstTimePayers(window: PaymentWindow): string[] {
     const rows = this.db
       .prepare(

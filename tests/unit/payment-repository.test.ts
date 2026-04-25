@@ -87,4 +87,53 @@ describe('PaymentRepository', () => {
     repo.insert(baseRecord({ id: 'p3', payer_wallet: '0xbbb' }));
     expect(repo.cumulativeUniquePayers()).toBe(2);
   });
+
+  it('returns "inserted" on first insert and "duplicate" on retry with same tx_hash', () => {
+    expect(repo.insert(baseRecord({ id: 'p1', protocol: 'mpp', tx_hash: '0xabc' }))).toBe('inserted');
+    expect(repo.insert(baseRecord({ id: 'p2', protocol: 'mpp', tx_hash: '0xabc' }))).toBe('duplicate');
+  });
+
+  it('returns null for findById on a missing id', () => {
+    expect(repo.findById('does-not-exist')).toBeNull();
+  });
+
+  it('summarizes an empty window as all zeros', () => {
+    const summary = repo.summarizeWindow({
+      start: '2026-04-01T00:00:00.000Z',
+      end: '2026-04-02T00:00:00.000Z',
+    });
+    expect(summary).toEqual({
+      totalUsd: 0,
+      count: 0,
+      uniquePayers: 0,
+      byProtocol: {
+        x402: { totalUsd: 0, count: 0 },
+        mpp: { totalUsd: 0, count: 0 },
+      },
+    });
+  });
+
+  it('window boundaries are half-open: start inclusive, end exclusive', () => {
+    repo.insert(baseRecord({ id: 'p_at_start', occurred_at: '2026-04-21T00:00:00.000Z', amount_usd: 1.0 }));
+    repo.insert(baseRecord({ id: 'p_at_end', occurred_at: '2026-04-22T00:00:00.000Z', amount_usd: 100.0 }));
+    const summary = repo.summarizeWindow({
+      start: '2026-04-21T00:00:00.000Z',
+      end: '2026-04-22T00:00:00.000Z',
+    });
+    expect(summary.totalUsd).toBe(1.0);
+    expect(summary.count).toBe(1);
+  });
+
+  it('firstTimePayers returns wallets in chronological order of their first payment', () => {
+    repo.insert(baseRecord({ id: 'p1', payer_wallet: '0xbbb', occurred_at: '2026-04-21T12:00:00.000Z' }));
+    repo.insert(baseRecord({ id: 'p2', payer_wallet: '0xaaa', occurred_at: '2026-04-21T08:00:00.000Z' }));
+    repo.insert(baseRecord({ id: 'p3', payer_wallet: '0xccc', occurred_at: '2026-04-21T20:00:00.000Z' }));
+
+    const firstTime = repo.firstTimePayers({
+      start: '2026-04-21T00:00:00.000Z',
+      end: '2026-04-22T00:00:00.000Z',
+    });
+
+    expect(firstTime).toEqual(['0xaaa', '0xbbb', '0xccc']);
+  });
 });
