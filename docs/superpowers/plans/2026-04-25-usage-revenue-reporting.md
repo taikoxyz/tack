@@ -56,7 +56,7 @@ tests/integration/
 - `src/app.ts` — wire payment-recorder + counters into existing log middleware; register slash route
 - `src/config.ts` — new env-driven config + production validation
 - `src/index.ts` — boot weekly job, register slash handler, wire dependencies
-- `package.json` — add `@notionhq/client`, `node-cron`, `ulid`, `@types/node-cron`
+- `package.json` — add `@notionhq/client`, `node-cron`, `ulid`
 - `.env.example` — document new env vars
 
 ---
@@ -81,8 +81,9 @@ tests/integration/
 Run:
 ```bash
 pnpm add @notionhq/client node-cron ulid
-pnpm add -D @types/node-cron
 ```
+
+> Note: do not install `@types/node-cron`. `node-cron@4` ships its own bundled type declarations; the DefinitelyTyped package (`@types/node-cron@3.x`) targets the v3 runtime and has materially incompatible types (`ScheduleOptions` vs `TaskOptions`, different callback signature, different `ScheduledTask` shape).
 
 Expected: `package.json` and `pnpm-lock.yaml` updated.
 
