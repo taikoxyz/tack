@@ -1409,6 +1409,64 @@ describe('API integration', () => {
     expect(row?.size_bytes).toBe(8675309);
   });
 
+  it('persists size_bytes from top-level body sizeBytes when header absent', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ cid: 'bafy-body-size', sizeBytes: 12345 })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(12345);
+  });
+
+  it('persists size_bytes from meta.contentSizeBytes when header absent', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ cid: 'bafy-meta-size', meta: { contentSizeBytes: '67890' } })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(67890);
+  });
+
+  it('header x-content-size-bytes takes precedence over body sizeBytes', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-content-size-bytes': '100'
+      },
+      body: JSON.stringify({ cid: 'bafy-header-wins', sizeBytes: 999999 })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(100);
+  });
+
   describe('multi-chain x402', () => {
     it('advertises both Taiko and Base in the 402 payment-required header', async () => {
       const multiChainApp = createApp({

@@ -692,7 +692,12 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
   });
 
   app.post('/pins', async (c) => {
-    const body = parsePinPayload(await parseJsonBody(c));
+    // Read raw JSON ONCE so both the typed parse AND the size extraction see the
+    // same unstripped object. parsePinPayload strips top-level sizeBytes; if we
+    // passed the *parsed* output to parseSizeBytesFromPinPayload, top-level
+    // sizeBytes would be silently dropped.
+    const rawJson = await parseJsonBody(c);
+    const body = parsePinPayload(rawJson);
     const paymentResult = c.get('paymentResult');
     const paidWallet = paymentResult?.wallet ?? requirePaidWallet(c.req.raw.headers);
     issueWalletAuthToken(c, paidWallet, services.walletAuth);
@@ -703,9 +708,14 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       services.maxDurationMonths ?? 24
     );
 
+    // Mirrors x402's pricing-side parser order (header preferred), but
+    // deliberately omits the content-length fallback x402 uses
+    // (services/x402.ts:96-98) — for POST /pins, content-length is the
+    // JSON envelope size, not the file, and would record a misleading
+    // size_bytes on the pin row.
     const sizeFromHeader = parseNonNegativeInteger(c.req.header('x-content-size-bytes'));
     const sizeFromBody = sizeFromHeader === undefined
-      ? parseSizeBytesFromPinPayload(body)
+      ? parseSizeBytesFromPinPayload(rawJson)
       : undefined;
     const sizeBytes = sizeFromHeader ?? sizeFromBody;
 

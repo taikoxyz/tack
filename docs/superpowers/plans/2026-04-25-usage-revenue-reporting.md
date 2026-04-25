@@ -965,10 +965,21 @@ size_bytes: typeof input.sizeBytes === 'number' && input.sizeBytes > 0 ? input.s
 In `src/app.ts`, find the `POST /pins` handler. Before calling `createPin`, extract the size:
 
 ```typescript
+// Read raw JSON ONCE so both the typed parse AND the size extraction see the
+// same unstripped object. parsePinPayload strips top-level sizeBytes; if we
+// passed the *parsed* output to parseSizeBytesFromPinPayload, top-level
+// sizeBytes would be silently dropped.
+const rawJson = await parseJsonBody(c);
+const payload = parsePinPayload(rawJson);
+
 const sizeFromHeader = parseNonNegativeInteger(c.req.header('x-content-size-bytes'));
-const sizeFromBody = sizeFromHeader === undefined ? parseSizeBytesFromPinPayload(JSON.stringify(payload)) : undefined;
+const sizeFromBody = sizeFromHeader === undefined
+  ? parseSizeBytesFromPinPayload(rawJson)
+  : undefined;
 const sizeBytes = sizeFromHeader ?? sizeFromBody;
 ```
+
+**Important**: pass `rawJson` (the unstripped JSON object) to `parseSizeBytesFromPinPayload`, not the output of `parsePinPayload`. The typed parse strips top-level `sizeBytes`; passing the parsed output silently drops clients that post `{ cid, sizeBytes }` without an `x-content-size-bytes` header.
 
 Reuse `parseNonNegativeInteger` and `parseSizeBytesFromPinPayload` from `src/services/payment/pricing.ts`. Pass `sizeBytes` into `createPin`.
 
