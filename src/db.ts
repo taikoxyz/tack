@@ -61,8 +61,10 @@ export function createDb(dbPath: string): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_payments_occurred_at ON payments(occurred_at);
-    CREATE INDEX IF NOT EXISTS idx_payments_payer_wallet ON payments(payer_wallet);
+    CREATE INDEX IF NOT EXISTS idx_payments_payer_occurred ON payments(payer_wallet, occurred_at);
     CREATE INDEX IF NOT EXISTS idx_payments_protocol ON payments(protocol);
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_payments_protocol_txhash
+      ON payments(protocol, tx_hash) WHERE tx_hash IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS request_metrics_daily (
       day     TEXT NOT NULL,
@@ -76,7 +78,7 @@ export function createDb(dbPath: string): Database.Database {
   if (!columns.some((col) => col.name === 'size_bytes')) {
     db.exec('ALTER TABLE pins ADD COLUMN size_bytes INTEGER');
   }
-  db.exec('CREATE INDEX IF NOT EXISTS idx_pins_size_bytes ON pins(size_bytes)');
+  // idx_pins_size_bytes intentionally omitted: no query filters by size_bytes alone (only SUM)
 
   return db;
 }
