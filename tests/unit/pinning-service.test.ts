@@ -374,4 +374,34 @@ describe('PinningService', () => {
     expect(firstSweep.expiredCount).toBe(1);
     expect(() => service.getPin(created.requestid, wallet)).toThrow('not found');
   });
+
+  it('replacePin resets size_bytes to null when the CID changes', async () => {
+    // Create a pin and manually set its size_bytes (simulating a future
+    // upload path that populates size).
+    const created = await service.createPin({ cid: 'bafy-old', owner: wallet });
+    db.prepare('UPDATE pins SET size_bytes = ? WHERE requestid = ?').run(1_000_000, created.requestid);
+
+    const replaced = await service.replacePin(
+      created.requestid,
+      { cid: 'bafy-new' },
+      wallet,
+    );
+
+    const stored = repository.findByRequestId(replaced.requestid);
+    expect(stored?.size_bytes).toBeNull();
+  });
+
+  it('replacePin preserves size_bytes when the CID is unchanged', async () => {
+    const created = await service.createPin({ cid: 'bafy-same', owner: wallet });
+    db.prepare('UPDATE pins SET size_bytes = ? WHERE requestid = ?').run(4242, created.requestid);
+
+    const replaced = await service.replacePin(
+      created.requestid,
+      { cid: 'bafy-same', name: 'renamed' },
+      wallet,
+    );
+
+    const stored = repository.findByRequestId(replaced.requestid);
+    expect(stored?.size_bytes).toBe(4242);
+  });
 });

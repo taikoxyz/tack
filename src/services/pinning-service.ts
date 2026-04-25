@@ -205,7 +205,8 @@ export class PinningService {
       status: 'pinning',
       info: {},
       updated: new Date().toISOString(),
-      expires_at: existing.expires_at
+      expires_at: existing.expires_at,
+      size_bytes: input.cid === existing.cid ? existing.size_bytes : null
     };
 
     this.repository.update(requestid, next);
