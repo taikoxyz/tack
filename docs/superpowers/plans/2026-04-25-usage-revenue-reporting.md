@@ -917,61 +917,81 @@ git commit -m "refactor(ipfs): addContent returns hash + size"
 
 ---
 
-## Task 7: Persist `size_bytes` on upload path
+## Task 7: Persist `size_bytes` on POST /pins via existing size header
+
+The `/upload` flow returns `{ cid, size }` but does NOT create a pin row — that's the IPFS Pinning Service spec. Pin records are created by `POST /pins`, which already extracts `x-content-size-bytes` for x402 pricing (`src/services/x402.ts:97`). This task threads that same size through to the pin record.
 
 **Files:**
-- Modify: `src/services/pinning-service.ts`
-- Test: `tests/unit/pinning-service.test.ts`
+- Modify: `src/services/pinning-service.ts` — `createPin` accepts an optional `sizeBytes` parameter and persists it
+- Modify: `src/app.ts` — the `POST /pins` handler reads the size from the request (header preferred, then JSON payload) and passes it to `createPin`
+- Test: `tests/unit/pinning-service.test.ts` — assert `size_bytes` is persisted when supplied
 
 - [ ] **Step 1: Write the failing test**
 
-In `tests/unit/pinning-service.test.ts`, add a new test in the existing describe block:
+In `tests/unit/pinning-service.test.ts`, add inside the existing describe:
 
 ```typescript
-it('persists size_bytes from upload', async () => {
-  ipfsClient.addContent.mockResolvedValueOnce({ hash: 'bafy-upload', size: 4242 });
-
-  const result = await service.uploadAndPin({
-    content: new Blob(['hi']),
-    filename: 'h.txt',
-    owner: wallet,
-  });
+it('persists size_bytes when supplied to createPin', async () => {
+  const result = await service.createPin({ cid: 'bafy-sized', owner: wallet, sizeBytes: 4242 });
 
   const stored = repository.findByRequestId(result.requestid);
   expect(stored?.size_bytes).toBe(4242);
 });
-```
 
-(If `uploadAndPin` is named differently in `PinningService`, find the actual method that handles upload and adapt the call. Check the file first.)
+it('persists size_bytes as null when not supplied to createPin', async () => {
+  const result = await service.createPin({ cid: 'bafy-no-size', owner: wallet });
+
+  const stored = repository.findByRequestId(result.requestid);
+  expect(stored?.size_bytes).toBeNull();
+});
+```
 
 - [ ] **Step 2: Run the test**
 
-Run: `pnpm test tests/unit/pinning-service.test.ts`
-Expected: FAIL — size is null (we set it to null in Task 5).
+`pnpm test tests/unit/pinning-service.test.ts` — expected: FAIL (createPin doesn't accept sizeBytes).
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Update `createPin` signature and implementation**
 
-In `src/services/pinning-service.ts`, find the upload-and-pin method. After the `addContent` call, capture `size` and use it when constructing the `StoredPinRecord`:
+In `src/services/pinning-service.ts`, find `createPin`. Add an optional `sizeBytes?: number` to the input type. In the body where the StoredPinRecord is constructed (currently has `size_bytes: null`), change to:
 
 ```typescript
-const { hash: cid, size } = await this.ipfsClient.addContent(content, filename);
-// ... existing logic ...
-const record: StoredPinRecord = {
-  // ... existing fields ...
-  size_bytes: size > 0 ? size : null,
-};
+size_bytes: typeof input.sizeBytes === 'number' && input.sizeBytes > 0 ? input.sizeBytes : null,
 ```
 
-- [ ] **Step 4: Run tests**
+(Treat 0 as "unknown" — same convention as the digest excludes 0/NULL.)
 
-Run: `pnpm test`
-Expected: PASS.
+- [ ] **Step 4: Wire `POST /pins` to extract and pass size**
 
-- [ ] **Step 5: Commit**
+In `src/app.ts`, find the `POST /pins` handler. Before calling `createPin`, extract the size:
+
+```typescript
+const sizeFromHeader = parseNonNegativeInteger(c.req.header('x-content-size-bytes'));
+const sizeFromBody = sizeFromHeader === undefined ? parseSizeBytesFromPinPayload(JSON.stringify(payload)) : undefined;
+const sizeBytes = sizeFromHeader ?? sizeFromBody;
+```
+
+Reuse `parseNonNegativeInteger` and `parseSizeBytesFromPinPayload` from `src/services/payment/pricing.ts`. Pass `sizeBytes` into `createPin`.
+
+- [ ] **Step 5: Run all tests**
+
+`pnpm test && pnpm typecheck` — expected: green.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/services/pinning-service.ts tests/unit/pinning-service.test.ts
-git commit -m "feat(pins): persist size_bytes on upload"
+git add src/services/pinning-service.ts src/app.ts tests/unit/pinning-service.test.ts
+git commit -m "$(cat <<'EOF'
+feat(pins): persist size_bytes from x-content-size-bytes on POST /pins
+
+Reuses the same size signal x402 already consumes for pricing —
+header `x-content-size-bytes` preferred, then JSON-payload parse via
+parseSizeBytesFromPinPayload — and threads it through createPin to
+the pin record. Clients that uploaded via /upload now have the size
+to feed back via this header.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
 ```
 
 ---

@@ -538,7 +538,7 @@ ${protocolsBlock}
 ### Paid (payment required)
 
 - POST /pins — Pin content by CID. Body: { cid, name?, origins?, meta? }. Optional header: X-Pin-Duration-Months.
-- POST /upload — Upload a file (multipart/form-data, field "file", max ${uploadMaxMb}MB). Returns { cid }.
+- POST /upload — Upload a file (multipart/form-data, field "file", max ${uploadMaxMb}MB). Returns \{ cid, size \} — pass \`size\` back via the \`x-content-size-bytes\` header on a subsequent \`POST /pins\` so the pin record records the size.
 
 ### Gateway
 
@@ -776,9 +776,9 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     }
 
     issueWalletAuthToken(c, paidWallet, services.walletAuth);
-    const cid = await services.pinningService.uploadContent(upload, upload.name || 'upload.bin');
+    const { cid, size } = await services.pinningService.uploadContent(upload, upload.name || 'upload.bin');
 
-    return c.json({ cid }, 201);
+    return c.json({ cid, size }, 201);
   });
 
   app.get('/ipfs/:cid', async (c) => {

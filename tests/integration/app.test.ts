@@ -470,8 +470,9 @@ describe('API integration', () => {
 
     expect(uploadRes.status).toBe(201);
     extractIssuedOwnerToken(uploadRes);
-    const uploadBody = (await uploadRes.json()) as { cid: string };
+    const uploadBody = (await uploadRes.json()) as { cid: string; size: number };
     expect(uploadBody.cid).toBe('bafy-uploaded-cid');
+    expect(typeof uploadBody.size).toBe('number');
 
     const getRes = await app.request('http://localhost/ipfs/bafy-uploaded-cid');
     expect(getRes.status).toBe(200);
