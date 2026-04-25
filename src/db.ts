@@ -42,5 +42,41 @@ export function createDb(dbPath: string): Database.Database {
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_pins_expires_at ON pins(expires_at)');
 
+  // Reporting feature: payments raw event log
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id              TEXT PRIMARY KEY,
+      occurred_at     TEXT NOT NULL,
+      protocol        TEXT NOT NULL CHECK(protocol IN ('x402', 'mpp')),
+      chain_id        INTEGER NOT NULL,
+      payer_wallet    TEXT NOT NULL,
+      asset_address   TEXT NOT NULL,
+      asset_decimals  INTEGER NOT NULL,
+      amount_atomic   TEXT NOT NULL,
+      amount_usd      REAL NOT NULL,
+      endpoint        TEXT NOT NULL CHECK(endpoint IN ('pin', 'retrieval')),
+      request_id      TEXT,
+      tx_hash         TEXT,
+      pin_request_id  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payments_occurred_at ON payments(occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_payments_payer_wallet ON payments(payer_wallet);
+    CREATE INDEX IF NOT EXISTS idx_payments_protocol ON payments(protocol);
+
+    CREATE TABLE IF NOT EXISTS request_metrics_daily (
+      day     TEXT NOT NULL,
+      bucket  TEXT NOT NULL,
+      count   INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, bucket)
+    );
+  `);
+
+  // Reporting feature: pin size column
+  if (!columns.some((col) => col.name === 'size_bytes')) {
+    db.exec('ALTER TABLE pins ADD COLUMN size_bytes INTEGER');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_pins_size_bytes ON pins(size_bytes)');
+
   return db;
 }
