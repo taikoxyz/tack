@@ -32,7 +32,7 @@ describe('PinningService', () => {
     ipfsClient = {
       pinAdd: vi.fn().mockResolvedValue(undefined),
       pinRm: vi.fn().mockResolvedValue(undefined),
-      addContent: vi.fn().mockResolvedValue('bafy-upload'),
+      addContent: vi.fn().mockResolvedValue({ hash: 'bafy-upload', size: 0 }),
       cat: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]).buffer)
     };
     replicaA = {

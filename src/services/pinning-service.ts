@@ -404,7 +404,8 @@ export class PinningService {
   }
 
   async uploadContent(content: Blob, filename: string): Promise<string> {
-    return this.ipfsClient.addContent(content, filename);
+    const { hash: cid, size: _size } = await this.ipfsClient.addContent(content, filename);
+    return cid;
   }
 
   async getContent(cid: string): Promise<GatewayContentResult> {

@@ -268,7 +268,7 @@ describe('API integration', () => {
     ipfsClient = {
       pinAdd: vi.fn().mockResolvedValue(undefined),
       pinRm: vi.fn().mockResolvedValue(undefined),
-      addContent: vi.fn().mockResolvedValue('bafy-uploaded-cid'),
+      addContent: vi.fn().mockResolvedValue({ hash: 'bafy-uploaded-cid', size: 0 }),
       cat: vi.fn().mockResolvedValue(new TextEncoder().encode('hello world').buffer)
     };
 
