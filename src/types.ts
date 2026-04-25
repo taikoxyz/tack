@@ -20,6 +20,7 @@ export interface StoredPinRecord {
   created: string;
   updated: string;
   expires_at: string | null;
+  size_bytes: number | null;
 }
 
 export interface PinStatusResponse {

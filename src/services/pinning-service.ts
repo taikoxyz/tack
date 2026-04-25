@@ -139,7 +139,8 @@ export class PinningService {
       owner: input.owner,
       created: now,
       updated: now,
-      expires_at: computeExpiresAt(input.durationMonths)
+      expires_at: computeExpiresAt(input.durationMonths),
+      size_bytes: null
     };
 
     this.repository.create(record);
