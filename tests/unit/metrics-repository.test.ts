@@ -47,4 +47,56 @@ describe('MetricsRepository', () => {
       rejected_402: 1,
     });
   });
+
+  it('summarizes an empty window as all zeros', () => {
+    const summary = repo.summarizeWindow({
+      startDay: '2026-04-20',
+      endDayExclusive: '2026-04-21',
+    });
+    expect(summary).toEqual({ total: 0, paid: 0, rejected_402: 0 });
+  });
+
+  it('window boundaries are half-open: startDay inclusive', () => {
+    repo.increment('2026-04-21', 'total');
+    const summary = repo.summarizeWindow({
+      startDay: '2026-04-21',
+      endDayExclusive: '2026-04-22',
+    });
+    expect(summary.total).toBe(1);
+  });
+
+  it('window boundaries are half-open: endDayExclusive excluded', () => {
+    repo.increment('2026-04-21', 'total');
+    const summary = repo.summarizeWindow({
+      startDay: '2026-04-20',
+      endDayExclusive: '2026-04-21',
+    });
+    expect(summary.total).toBe(0);
+  });
+
+  it('ignores unknown bucket labels in summarizeWindow', () => {
+    // Bypass the typed API to seed a stray bucket value
+    db.prepare(
+      `INSERT INTO request_metrics_daily (day, bucket, count) VALUES (?, ?, ?)`
+    ).run('2026-04-21', 'unknown_label', 99);
+    repo.increment('2026-04-21', 'total');
+
+    const summary = repo.summarizeWindow({
+      startDay: '2026-04-21',
+      endDayExclusive: '2026-04-22',
+    });
+
+    expect(summary).toEqual({ total: 1, paid: 0, rejected_402: 0 });
+  });
+
+  it('buckets do not collide on the same day', () => {
+    repo.increment('2026-04-21', 'total');
+    repo.increment('2026-04-21', 'total');
+    repo.increment('2026-04-21', 'paid');
+    const summary = repo.summarizeWindow({
+      startDay: '2026-04-21',
+      endDayExclusive: '2026-04-22',
+    });
+    expect(summary).toEqual({ total: 2, paid: 1, rejected_402: 0 });
+  });
 });
