@@ -27,14 +27,25 @@ src/
       challenge-enhancer.ts   # Adds MPP WWW-Authenticate to x402 402s
       mpp-payer.ts            # Verifies MPP payer from on-chain Transfer event
     rate-limiter.ts           # Per-wallet/IP rate limiting
+    reporting/
+      types.ts                # Report, ReportWindow
+      payment-recorder.ts     # records payment rows from PaymentResult
+      digest-builder.ts       # pure: window → Report aggregator
+      slack-publisher.ts      # post(report) + formatInline(report)
+      slack-slash-handler.ts  # verifies Slack signature, builds, replies
+      notion-publisher.ts     # appends weekly row via Notion v5 dataSources API
+      weekly-digest-job.ts    # cron: build → publish to Slack + Notion
     content-cache.ts          # In-memory LRU cache for gateway responses
     content-type.ts           # MIME type detection
     logger.ts                 # Pino structured logging
   repositories/
+    metrics-repository.ts     # daily request counters
+    payment-repository.ts     # CRUD + window aggregation on `payments`
     pin-repository.ts         # SQLite persistence, query filtering, owner isolation
 tests/
   unit/                       # Unit tests
-  integration/                # Integration tests
+  integration/
+    reporting-digest.test.ts  # end-to-end weekly digest test
 scripts/
   backup-db.sh                # SQLite backup script
 ```
@@ -78,3 +89,9 @@ scripts/
 - **Dual-challenge 402s**: An unpaid request gets BOTH `payment-required` (x402) and `WWW-Authenticate: Payment` (MPP) in the same 402. `challenge-enhancer.ts` wraps x402 middleware so MPP's `WWW-Authenticate` is grafted onto x402's 402 response post-hoc. Tests live in `tests/integration/app.test.ts > dual-protocol`.
 - **MPP settles before the handler, x402 settles after**: mppx verifies + broadcasts the Tempo transaction during `charge()`, while x402 settles via the facilitator post-response.
 - **MPP ownership comes from on-chain evidence, never `credential.source`**: The MPP credential has an optional `source` DID that is *client-controlled metadata* — `Credential.deserialize` spreads it through unverified, and the Tempo `verify()` never checks it. Trusting `source` would let a paying attacker mint owner-scoped JWTs for any victim wallet (forged `did:pkh:eip155:4217:<victim>`). Instead, `mpp-payer.ts` pulls the settled tx hash out of the mppx `Payment-Receipt` header, re-reads the Tempo receipt via a viem public client, and returns the `from` field of the matching TIP-20 `Transfer`/`TransferWithMemo` event. That EOA is the token holder who authorized the spend and is the canonical payer regardless of fee-payer relaying. Regression test: `tests/integration/app.test.ts > dual-protocol > ignores a forged credential.source`.
+- **Reporting is opt-in (recorder always runs, publishers gated)**: `WEEKLY_DIGEST_ENABLED` and `SLACK_SLASH_COMMAND_ENABLED` default to false. Even when both are off, `PaymentRecorder` still writes payment rows and `MetricsRepository` still increments per-request counters — so `payments` and `request_metrics_daily` accumulate from deploy date, ready for whenever the publishers get switched on. Past payments before deploy are unrecoverable; the first weekly digest after enabling reports a partial window.
+- **Slash command auth is the Slack signing secret, not wallet auth**: `/tack stats` works for any member of the channel where the slash command is installed. Channel membership is the access boundary. There is no admin allowlist; revenue stats aren't pin-owned data so wallet auth doesn't apply.
+- **Notion idempotency keys off ISO week**: `NotionPublisher.append` queries by week key (e.g. `2026-W17`) before creating a page. Re-running the digest in the same week is safe — the second run is a no-op.
+- **Notion v5 dataSources API**: We use `databases.retrieve` to look up a database's first data source ID, cache it on the publisher, then `dataSources.query` for the idempotency check. Page creation still uses `parent: { database_id }` per Notion v5 backwards compat. The operator configures `NOTION_DATABASE_ID` (familiar concept); we resolve the data source at runtime.
+- **DigestBuilder requires UTC-midnight-aligned windows**: `window.start` and `window.end` must end with `T00:00:00Z` or `T00:00:00.000Z`. The cron job and slash handler both round to midnight before calling. Non-midnight windows would skew the metrics rollup since it's day-granular; the builder asserts and throws.
+- **MPP amount conversion happens in the middleware, not the recorder**: `requirement.amount` from `MppPaymentRequirement` is a *decimal USD string* (from `formatUsdAmount`). The MPP middleware converts to atomic units using `chainContext.assetDecimals` before setting `paymentResult.amountAtomic`, so the `payments.amount_atomic` column is unit-consistent with x402 (always atomic-integer strings).
