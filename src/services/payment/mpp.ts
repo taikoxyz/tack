@@ -1,4 +1,5 @@
 import { Mppx, tempo } from 'mppx/server';
+import { tempo as tempoChain, tempoModerato as tempoModeratoChain } from 'viem/chains';
 import type { MppChainContext } from './middleware.js';
 
 /**
@@ -12,19 +13,33 @@ import type { MppChainContext } from './middleware.js';
 export const TEMPO_USDC_E_MAINNET = '0x20C000000000000000000000b9537d11c60E8b50' as const;
 export const TEMPO_PATH_USD_TESTNET = '0x20c0000000000000000000000000000000000000' as const;
 
-export const TEMPO_CHAIN_ID = 4217;
+/**
+ * Canonical chain IDs sourced from viem chain objects so they stay in sync
+ * with the broader viem ecosystem. Tempo mainnet = 4217; Moderato testnet =
+ * 42431. Verify against `mppx/tempo/internal/defaults.ts` when updating deps.
+ */
+export const TEMPO_CHAIN_ID_MAINNET = tempoChain.id;    // 4217
+export const TEMPO_CHAIN_ID_MODERATO = tempoModeratoChain.id; // 42431
+
 export const TEMPO_USDC_E_DECIMALS = 6;
 export const TEMPO_PATH_USD_DECIMALS = 6;
 
 export function createMppChainContext(testnet: boolean): MppChainContext {
   const currency = testnet ? TEMPO_PATH_USD_TESTNET : TEMPO_USDC_E_MAINNET;
   const decimals = testnet ? TEMPO_PATH_USD_DECIMALS : TEMPO_USDC_E_DECIMALS;
+  const chainId = testnet ? TEMPO_CHAIN_ID_MODERATO : TEMPO_CHAIN_ID_MAINNET;
   const divisor = 10 ** decimals;
   return {
-    chainId: TEMPO_CHAIN_ID,
+    chainId,
     assetAddress: currency.toLowerCase(),
     assetDecimals: decimals,
-    atomicToUsd: (atomic: string) => Number(atomic) / divisor,
+    atomicToUsd: (atomic: string) => {
+      const n = Number(atomic);
+      if (!Number.isFinite(n)) {
+        throw new Error(`invalid atomic amount: ${JSON.stringify(atomic)}`);
+      }
+      return n / divisor;
+    },
     endpointFor: (path: string) => (path.startsWith('/ipfs/') ? 'retrieval' : 'pin'),
   };
 }
