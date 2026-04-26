@@ -15,16 +15,14 @@ export interface SlackSlashHandlerConfig {
 }
 
 const FIVE_MIN_SECONDS = 5 * 60;
+const MAX_BODY_BYTES = 64 * 1024;
 
 function verifySignature(secret: string, body: string, ts: string, sig: string): boolean {
   const baseString = `v0:${ts}:${body}`;
   const expected = `v0=${createHmac('sha256', secret).update(baseString).digest('hex')}`;
   if (expected.length !== sig.length) return false;
-  try {
-    return timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(sig, 'utf8'));
-  } catch {
-    return false;
-  }
+  // Length is verified above, so timingSafeEqual cannot throw.
+  return timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(sig, 'utf8'));
 }
 
 function midnightUtc(d: Date): Date {
@@ -65,6 +63,8 @@ function resolveWindow(text: string, now: Date): ReportWindow | null {
         end: todayMidnight.toISOString(),
       };
     }
+    case 'help':
+      return null;  // falls through to ephemeral help message
     default:
       return null;
   }
@@ -91,9 +91,14 @@ export function createSlackSlashHandler(config: SlackSlashHandlerConfig): (req: 
     if (!Number.isFinite(tsNum)) {
       return new Response('unauthorized', { status: 401 });
     }
-    const ageSeconds = Math.abs(Math.floor(now().getTime() / 1000) - tsNum);
+    const today = now();
+    const ageSeconds = Math.abs(Math.floor(today.getTime() / 1000) - tsNum);
     if (ageSeconds > FIVE_MIN_SECONDS) {
       return new Response('unauthorized', { status: 401 });
+    }
+    const declaredLen = Number(req.headers.get('content-length') ?? 0);
+    if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
+      return new Response('payload too large', { status: 413 });
     }
     const body = await req.text();
     if (!verifySignature(signingSecret, body, ts, sig)) {
@@ -103,7 +108,6 @@ export function createSlackSlashHandler(config: SlackSlashHandlerConfig): (req: 
     const params = new URLSearchParams(body);
     const text = params.get('text') ?? '';
 
-    const today = now();
     const window = resolveWindow(text, today);
     if (!window) {
       return ephemeralText(

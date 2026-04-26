@@ -143,4 +143,106 @@ describe('createSlackSlashHandler', () => {
       expect(body.text).toMatch(/temporarily|unavailable|error/i);
     });
   });
+
+  describe('body size cap', () => {
+    it('rejects bodies larger than 64KB with 413 (before signature check)', async () => {
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const ts = String(Math.floor(FIXED_NOW.getTime() / 1000));
+      const req = new Request('http://test/slack/commands/stats', {
+        method: 'POST',
+        headers: {
+          'X-Slack-Request-Timestamp': ts,
+          'X-Slack-Signature': 'v0=fake',
+          'content-length': String(100 * 1024),  // 100KB declared
+        },
+        body: 'text=week',  // actual small body — content-length is what we check
+      });
+      const res = await handler(req);
+      expect(res.status).toBe(413);
+    });
+  });
+
+  describe('timestamp validation', () => {
+    it('rejects future-timestamps more than 5 min ahead with 401', async () => {
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const future = String(Math.floor(FIXED_NOW.getTime() / 1000) + 600);
+      const res = await handler(signedRequest('text=week', future));
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('wtd edge cases', () => {
+    it('parses "wtd" on Sunday as 6 days back to today midnight', async () => {
+      // 2026-04-26 is a Sunday
+      const sunday = new Date('2026-04-26T12:00:00.000Z');
+      const handler = createSlackSlashHandler({
+        signingSecret: SECRET, builder: builder as any, publisher: publisher as any,
+        now: () => sunday,
+      });
+
+      const sundayTs = String(Math.floor(sunday.getTime() / 1000));
+      const body = 'text=wtd';
+      const baseString = `v0:${sundayTs}:${body}`;
+      const sig = `v0=${createHmac('sha256', SECRET).update(baseString).digest('hex')}`;
+      const req = new Request('http://test/slack/commands/stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Slack-Request-Timestamp': sundayTs,
+          'X-Slack-Signature': sig,
+        },
+        body,
+      });
+
+      await handler(req);
+      const arg = builder.build.mock.calls[0][0];
+      expect(arg.window.start).toBe('2026-04-20T00:00:00.000Z');  // Mon 6 days back
+      expect(arg.window.end).toBe('2026-04-26T00:00:00.000Z');
+    });
+
+    it('parses "wtd" on Monday as today midnight to today midnight (single-day window)', async () => {
+      const monday = new Date('2026-04-20T12:00:00.000Z');  // confirmed Monday
+      const handler = createSlackSlashHandler({
+        signingSecret: SECRET, builder: builder as any, publisher: publisher as any,
+        now: () => monday,
+      });
+
+      const mondayTs = String(Math.floor(monday.getTime() / 1000));
+      const body = 'text=wtd';
+      const baseString = `v0:${mondayTs}:${body}`;
+      const sig = `v0=${createHmac('sha256', SECRET).update(baseString).digest('hex')}`;
+      const req = new Request('http://test/slack/commands/stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Slack-Request-Timestamp': mondayTs,
+          'X-Slack-Signature': sig,
+        },
+        body,
+      });
+
+      await handler(req);
+      const arg = builder.build.mock.calls[0][0];
+      expect(arg.window.start).toBe('2026-04-20T00:00:00.000Z');
+      expect(arg.window.end).toBe('2026-04-20T00:00:00.000Z');
+    });
+  });
+
+  describe('help and missing text', () => {
+    it('handles "help" with the same message as an unknown arg', async () => {
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const res = await handler(signedRequest('text=help'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { response_type: string; text: string };
+      expect(body.text).toMatch(/week|today|month|wtd/);
+      expect(builder.build).not.toHaveBeenCalled();
+    });
+
+    it('handles missing text field by defaulting to week', async () => {
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      await handler(signedRequest('command=/tack-stats'));  // no text param
+      const arg = builder.build.mock.calls[0][0];
+      expect(arg.window.start).toBe('2026-04-15T00:00:00.000Z');
+    });
+  });
 });

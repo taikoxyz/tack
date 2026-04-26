@@ -1943,8 +1943,9 @@ describe('createSlackSlashHandler', () => {
     expect(res.status).toBe(200);
     expect(builder.build).toHaveBeenCalledOnce();
     const arg = builder.build.mock.calls[0][0];
-    expect(new Date(arg.window.end).toISOString()).toBe('2026-04-22T12:00:00.000Z');
-    expect(new Date(arg.window.start).toISOString()).toBe('2026-04-15T12:00:00.000Z');
+    // Windows are UTC-midnight-aligned (DigestBuilder requires this)
+    expect(arg.window.end).toBe('2026-04-22T00:00:00.000Z');
+    expect(arg.window.start).toBe('2026-04-15T00:00:00.000Z');
     expect(publisher.formatInline).toHaveBeenCalledWith(mockReport);
   });
 
@@ -1959,14 +1960,14 @@ describe('createSlackSlashHandler', () => {
     const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
     await handler(signedRequest('text=month'));
     const arg = builder.build.mock.calls[0][0];
-    expect(new Date(arg.window.start).toISOString()).toBe('2026-03-23T12:00:00.000Z');
+    expect(arg.window.start).toBe('2026-03-23T00:00:00.000Z');
   });
 
   it('defaults empty text to last 7 days', async () => {
     const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
     await handler(signedRequest('text='));
     const arg = builder.build.mock.calls[0][0];
-    expect(new Date(arg.window.start).toISOString()).toBe('2026-04-15T12:00:00.000Z');
+    expect(arg.window.start).toBe('2026-04-15T00:00:00.000Z');
   });
 });
 ```
@@ -2002,26 +2003,35 @@ function verifySignature(secret: string, body: string, ts: string, sig: string):
   return timingSafeEqual(Buffer.from(expected), Buffer.from(sig));
 }
 
-function resolveWindow(text: string, now: Date): ReportWindow {
-  const end = now.toISOString();
-  const ms = 1000 * 60 * 60 * 24;
+// NOTE: All windows are UTC-midnight aligned. DigestBuilder asserts this and
+// will throw on non-midnight boundaries. `end = now.toISOString()` would crash.
+function midnightUtc(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function addDays(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function resolveWindow(text: string, now: Date): ReportWindow | null {
+  const todayMidnight = midnightUtc(now);
   switch (text.trim().toLowerCase()) {
-    case 'today': {
-      const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      return { start: startOfDay.toISOString(), end };
-    }
-    case 'month':
-      return { start: new Date(now.getTime() - 30 * ms).toISOString(), end };
-    case 'wtd': {
-      // ISO weeks start Monday
-      const day = now.getUTCDay() === 0 ? 6 : now.getUTCDay() - 1;
-      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day));
-      return { start: start.toISOString(), end };
-    }
     case '':
     case 'week':
+      return { start: addDays(todayMidnight, -7).toISOString(), end: todayMidnight.toISOString() };
+    case 'today':
+      return { start: todayMidnight.toISOString(), end: addDays(todayMidnight, 1).toISOString() };
+    case 'month':
+      return { start: addDays(todayMidnight, -30).toISOString(), end: todayMidnight.toISOString() };
+    case 'wtd': {
+      // ISO weeks start Monday. JS getUTCDay: 0=Sun...6=Sat.
+      const dayOfWeek = todayMidnight.getUTCDay();
+      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      return { start: addDays(todayMidnight, -daysSinceMonday).toISOString(), end: todayMidnight.toISOString() };
+    }
+    case 'help':
     default:
-      return { start: new Date(now.getTime() - 7 * ms).toISOString(), end };
+      return null;
   }
 }
 
