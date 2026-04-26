@@ -34,6 +34,11 @@ export async function runWeeklyDigest(deps: WeeklyDigestDeps): Promise<void> {
   const now = (deps.now ?? (() => new Date()))();
 
   const todayMidnight = midnightUtc(now);
+  // Window is anchored to the actual fire day, not a fixed weekday.
+  // If the cron misses a day (e.g. pod restart), the next fire reports
+  // the trailing 7 days from that fire's midnight — not the canonical
+  // Mon-to-Mon week. Notion's per-week-key idempotency still works
+  // because the row's week key derives from window.start.
   const window = {
     start: addDays(todayMidnight, -7).toISOString(),
     end: todayMidnight.toISOString(),
@@ -64,6 +69,8 @@ export async function runWeeklyDigest(deps: WeeklyDigestDeps): Promise<void> {
 export interface ScheduleWeeklyDigestOptions extends WeeklyDigestDeps {
   /** Cron expression. e.g. `0 9 * * 1` = Mondays 09:00 UTC. */
   cronExpression: string;
+  /** Injected for tests. Defaults to node-cron. */
+  cronLib?: { schedule: (...args: any[]) => { stop: () => void }; validate: (expr: string) => boolean };
 }
 
 export interface WeeklyDigestHandle {
@@ -75,17 +82,39 @@ export interface WeeklyDigestHandle {
  * Returns a handle with `stop()`. Failures inside `runWeeklyDigest`
  * are already absorbed; this wrapper only catches genuinely
  * unexpected scheduler-level errors.
+ *
+ * If `opts.cronExpression` is invalid or `cron.schedule` throws,
+ * error-logs and returns a no-op handle so boot is not crashed.
  */
 export function scheduleWeeklyDigest(opts: ScheduleWeeklyDigestOptions): WeeklyDigestHandle {
-  const task = cron.schedule(
-    opts.cronExpression,
-    () => {
-      runWeeklyDigest(opts).catch((err) => {
-        opts.logger.error({ err }, 'weekly digest: unexpected error');
-      });
-    },
-    { timezone: 'UTC' }
-  );
+  const lib = opts.cronLib ?? cron;
+
+  if (!lib.validate(opts.cronExpression)) {
+    opts.logger.error(
+      { cronExpression: opts.cronExpression },
+      'weekly digest: invalid cron expression; scheduler not started'
+    );
+    return { stop: () => {} };
+  }
+
+  let task;
+  try {
+    task = lib.schedule(
+      opts.cronExpression,
+      () => {
+        runWeeklyDigest(opts).catch((err) => {
+          opts.logger.error({ err }, 'weekly digest: unexpected error');
+        });
+      },
+      { timezone: 'UTC' }
+    );
+  } catch (err) {
+    opts.logger.error(
+      { err, cronExpression: opts.cronExpression },
+      'weekly digest: cron.schedule threw; scheduler not started'
+    );
+    return { stop: () => {} };
+  }
 
   return {
     stop: () => task.stop(),

@@ -2360,40 +2360,90 @@ export interface WeeklyDigestDeps {
   now?: () => Date;
 }
 
+function midnightUtc(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function addDays(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
 export async function runWeeklyDigest(deps: WeeklyDigestDeps): Promise<void> {
   const { builder, slack, notion, logger } = deps;
   const now = (deps.now ?? (() => new Date()))();
 
-  const ms = 1000 * 60 * 60 * 24;
+  const todayMidnight = midnightUtc(now);
+  // Window is anchored to the actual fire day, not a fixed weekday.
+  // If the cron misses a day (e.g. pod restart), the next fire reports
+  // the trailing 7 days from that fire's midnight — not the canonical
+  // Mon-to-Mon week. Notion's per-week-key idempotency still works
+  // because the row's week key derives from window.start.
   const window = {
-    start: new Date(now.getTime() - 7 * ms).toISOString(),
-    end: now.toISOString(),
+    start: addDays(todayMidnight, -7).toISOString(),
+    end: todayMidnight.toISOString(),
   };
 
   logger.info({ window }, 'weekly digest: building report');
 
-  const report = builder.build({
-    window,
-    now: now.toISOString(),
-    generatedAt: now.toISOString(),
-  });
+  let report;
+  try {
+    report = builder.build({
+      window,
+      now: now.toISOString(),
+      generatedAt: now.toISOString(),
+    });
+  } catch (err) {
+    logger.error({ err, window }, 'weekly digest: builder.build threw');
+    return;
+  }
 
   await Promise.allSettled([
     slack.post(report).catch((err) => logger.warn({ err }, 'weekly digest: slack post failed')),
     notion.append(report).catch((err) => logger.warn({ err }, 'weekly digest: notion append failed')),
   ]);
 
-  logger.info('weekly digest: complete');
+  logger.info({ window }, 'weekly digest: complete');
 }
 
 export interface ScheduleWeeklyDigestOptions extends WeeklyDigestDeps {
   cronExpression: string;
+  /** Injected for tests. Defaults to node-cron. */
+  cronLib?: { schedule: (...args: any[]) => { stop: () => void }; validate: (expr: string) => boolean };
 }
 
-export function scheduleWeeklyDigest(opts: ScheduleWeeklyDigestOptions): { stop: () => void } {
-  const task = cron.schedule(opts.cronExpression, () => {
-    runWeeklyDigest(opts).catch((err) => opts.logger.error({ err }, 'weekly digest: unexpected error'));
-  }, { timezone: 'UTC' });
+export interface WeeklyDigestHandle {
+  stop: () => void;
+}
+
+export function scheduleWeeklyDigest(opts: ScheduleWeeklyDigestOptions): WeeklyDigestHandle {
+  const lib = opts.cronLib ?? cron;
+
+  if (!lib.validate(opts.cronExpression)) {
+    opts.logger.error(
+      { cronExpression: opts.cronExpression },
+      'weekly digest: invalid cron expression; scheduler not started'
+    );
+    return { stop: () => {} };
+  }
+
+  let task;
+  try {
+    task = lib.schedule(
+      opts.cronExpression,
+      () => {
+        runWeeklyDigest(opts).catch((err) => {
+          opts.logger.error({ err }, 'weekly digest: unexpected error');
+        });
+      },
+      { timezone: 'UTC' }
+    );
+  } catch (err) {
+    opts.logger.error(
+      { err, cronExpression: opts.cronExpression },
+      'weekly digest: cron.schedule threw; scheduler not started'
+    );
+    return { stop: () => {} };
+  }
 
   return {
     stop: () => task.stop(),

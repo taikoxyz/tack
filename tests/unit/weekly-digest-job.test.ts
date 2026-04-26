@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runWeeklyDigest } from '../../src/services/reporting/weekly-digest-job';
+import { runWeeklyDigest, scheduleWeeklyDigest } from '../../src/services/reporting/weekly-digest-job';
 import type { Report } from '../../src/services/reporting/types';
 
 const fakeReport = { window: { start: '', end: '' } } as unknown as Report;
@@ -99,5 +99,69 @@ describe('runWeeklyDigest', () => {
 
     const arg = builder.build.mock.calls[0][0];
     expect(arg.window.end).toBe('2026-04-27T00:00:00.000Z');
+  });
+});
+
+describe('scheduleWeeklyDigest', () => {
+  function makeDeps(logger?: any) {
+    return {
+      builder: {} as any,
+      slack: {} as any,
+      notion: {} as any,
+      logger: logger ?? { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    };
+  }
+
+  it('returns a stop handle that stops the scheduled task', () => {
+    const stop = vi.fn();
+    const fakeCronLib = {
+      validate: vi.fn().mockReturnValue(true),
+      schedule: vi.fn().mockReturnValue({ stop }),
+    };
+
+    const handle = scheduleWeeklyDigest({
+      ...makeDeps(),
+      cronExpression: '0 9 * * 1',
+      cronLib: fakeCronLib,
+    });
+
+    expect(fakeCronLib.schedule).toHaveBeenCalledWith('0 9 * * 1', expect.any(Function), { timezone: 'UTC' });
+    handle.stop();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('returns a no-op handle and error-logs when cron expression is invalid', () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const fakeCronLib = {
+      validate: vi.fn().mockReturnValue(false),
+      schedule: vi.fn(),
+    };
+
+    const handle = scheduleWeeklyDigest({
+      ...makeDeps(logger),
+      cronExpression: 'not a cron expression',
+      cronLib: fakeCronLib,
+    });
+
+    expect(fakeCronLib.schedule).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(() => handle.stop()).not.toThrow();
+  });
+
+  it('returns a no-op handle and error-logs when cron.schedule throws', () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const fakeCronLib = {
+      validate: vi.fn().mockReturnValue(true),
+      schedule: vi.fn().mockImplementation(() => { throw new Error('cron broke'); }),
+    };
+
+    const handle = scheduleWeeklyDigest({
+      ...makeDeps(logger),
+      cronExpression: '0 9 * * 1',
+      cronLib: fakeCronLib,
+    });
+
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(() => handle.stop()).not.toThrow();
   });
 });
