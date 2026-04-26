@@ -1,3 +1,5 @@
+import cron from 'node-cron';
+
 export interface AppConfig {
   port: number;
   ipfsApiUrl: string;
@@ -35,6 +37,13 @@ export interface AppConfig {
   mppPayTo: string;
   mppTestnet: boolean;
   mppTempoRpcUrl?: string;
+  weeklyDigestEnabled: boolean;
+  weeklyDigestCron: string;
+  slackWebhookUrl?: string;
+  slackSlashCommandEnabled: boolean;
+  slackSigningSecret?: string;
+  notionApiKey?: string;
+  notionDatabaseId?: string;
 }
 
 const PLACEHOLDER_EVM_ADDRESSES = new Set([
@@ -128,6 +137,26 @@ function parsePublicBaseUrl(value: string | undefined): string | undefined {
 
 function isPlaceholderEvmAddress(value: string): boolean {
   return PLACEHOLDER_EVM_ADDRESSES.has(value.trim().toLowerCase());
+}
+
+function validateReportingConfig(config: AppConfig): void {
+  if (config.weeklyDigestEnabled) {
+    if (!config.slackWebhookUrl) {
+      throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires SLACK_WEBHOOK_URL');
+    }
+    if (!config.notionApiKey) {
+      throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires NOTION_API_KEY');
+    }
+    if (!config.notionDatabaseId) {
+      throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires NOTION_DATABASE_ID');
+    }
+    if (!cron.validate(config.weeklyDigestCron)) {
+      throw new Error(`Invalid configuration: WEEKLY_DIGEST_CRON is not a valid cron expression: ${JSON.stringify(config.weeklyDigestCron)}`);
+    }
+  }
+  if (config.slackSlashCommandEnabled && !config.slackSigningSecret) {
+    throw new Error('Invalid configuration: SLACK_SLASH_COMMAND_ENABLED=true requires SLACK_SIGNING_SECRET');
+  }
 }
 
 function validateProductionConfig(config: AppConfig): void {
@@ -239,7 +268,14 @@ export function getConfig(): AppConfig {
     mppSecretKey,
     mppPayTo: process.env.MPP_PAY_TO ?? '0x0000000000000000000000000000000000000001',
     mppTestnet: parseBoolean(process.env.MPP_TESTNET, false),
-    mppTempoRpcUrl
+    mppTempoRpcUrl,
+    weeklyDigestEnabled: parseBoolean(process.env.WEEKLY_DIGEST_ENABLED, false),
+    weeklyDigestCron: process.env.WEEKLY_DIGEST_CRON ?? '0 9 * * 1',
+    slackWebhookUrl: process.env.SLACK_WEBHOOK_URL?.trim() || undefined,
+    slackSlashCommandEnabled: parseBoolean(process.env.SLACK_SLASH_COMMAND_ENABLED, false),
+    slackSigningSecret: process.env.SLACK_SIGNING_SECRET?.trim() || undefined,
+    notionApiKey: process.env.NOTION_API_KEY?.trim() || undefined,
+    notionDatabaseId: process.env.NOTION_DATABASE_ID?.trim() || undefined
   };
 
   if (!Number.isInteger(config.walletAuthTokenTtlSeconds) || config.walletAuthTokenTtlSeconds <= 0) {
@@ -250,6 +286,7 @@ export function getConfig(): AppConfig {
     throw new Error('X402_DEFAULT_DURATION_MONTHS must not exceed X402_MAX_DURATION_MONTHS');
   }
 
+  validateReportingConfig(config);
   validateProductionConfig(config);
   return config;
 }

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getConfig } from '../../src/config';
 
 const originalEnv = { ...process.env };
@@ -229,5 +229,109 @@ describe('config validation', () => {
     expect(config.x402MaxPriceUsd).toBe(25.0);
     expect(config.x402DefaultDurationMonths).toBe(6);
     expect(config.x402MaxDurationMonths).toBe(12);
+  });
+});
+
+describe('reporting config', () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      WALLET_AUTH_TOKEN_SECRET: 'test-wallet-auth-secret'
+    };
+    delete process.env.WEEKLY_DIGEST_ENABLED;
+    delete process.env.WEEKLY_DIGEST_CRON;
+    delete process.env.SLACK_WEBHOOK_URL;
+    delete process.env.SLACK_SLASH_COMMAND_ENABLED;
+    delete process.env.SLACK_SIGNING_SECRET;
+    delete process.env.NOTION_API_KEY;
+    delete process.env.NOTION_DATABASE_ID;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('defaults reporting features to disabled', () => {
+    delete process.env.WEEKLY_DIGEST_ENABLED;
+    delete process.env.SLACK_SLASH_COMMAND_ENABLED;
+    const cfg = getConfig();
+    expect(cfg.weeklyDigestEnabled).toBe(false);
+    expect(cfg.slackSlashCommandEnabled).toBe(false);
+  });
+
+  it('reads default WEEKLY_DIGEST_CRON of 0 9 * * 1', () => {
+    delete process.env.WEEKLY_DIGEST_CRON;
+    const cfg = getConfig();
+    expect(cfg.weeklyDigestCron).toBe('0 9 * * 1');
+  });
+
+  it('rejects WEEKLY_DIGEST_ENABLED=true without SLACK_WEBHOOK_URL', () => {
+    process.env.WEEKLY_DIGEST_ENABLED = 'true';
+    delete process.env.SLACK_WEBHOOK_URL;
+    process.env.NOTION_API_KEY = 'secret_x';
+    process.env.NOTION_DATABASE_ID = 'db_x';
+    expect(() => getConfig()).toThrow(/SLACK_WEBHOOK_URL/);
+  });
+
+  it('rejects WEEKLY_DIGEST_ENABLED=true without NOTION_API_KEY', () => {
+    process.env.WEEKLY_DIGEST_ENABLED = 'true';
+    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
+    delete process.env.NOTION_API_KEY;
+    process.env.NOTION_DATABASE_ID = 'db_x';
+    expect(() => getConfig()).toThrow(/NOTION_API_KEY/);
+  });
+
+  it('rejects WEEKLY_DIGEST_ENABLED=true without NOTION_DATABASE_ID', () => {
+    process.env.WEEKLY_DIGEST_ENABLED = 'true';
+    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
+    process.env.NOTION_API_KEY = 'secret_x';
+    delete process.env.NOTION_DATABASE_ID;
+    expect(() => getConfig()).toThrow(/NOTION_DATABASE_ID/);
+  });
+
+  it('rejects WEEKLY_DIGEST_ENABLED=true with invalid cron expression', () => {
+    process.env.WEEKLY_DIGEST_ENABLED = 'true';
+    process.env.WEEKLY_DIGEST_CRON = 'not-a-cron';
+    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
+    process.env.NOTION_API_KEY = 'secret_x';
+    process.env.NOTION_DATABASE_ID = 'db_x';
+    expect(() => getConfig()).toThrow(/WEEKLY_DIGEST_CRON/);
+  });
+
+  it('accepts WEEKLY_DIGEST_ENABLED=true with all required env', () => {
+    process.env.WEEKLY_DIGEST_ENABLED = 'true';
+    process.env.WEEKLY_DIGEST_CRON = '0 9 * * 1';
+    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
+    process.env.NOTION_API_KEY = 'secret_x';
+    process.env.NOTION_DATABASE_ID = 'db_x';
+    const cfg = getConfig();
+    expect(cfg.weeklyDigestEnabled).toBe(true);
+    expect(cfg.slackWebhookUrl).toBe('https://hooks.slack.com/x');
+    expect(cfg.notionApiKey).toBe('secret_x');
+    expect(cfg.notionDatabaseId).toBe('db_x');
+  });
+
+  it('rejects SLACK_SLASH_COMMAND_ENABLED=true without SLACK_SIGNING_SECRET', () => {
+    process.env.SLACK_SLASH_COMMAND_ENABLED = 'true';
+    delete process.env.SLACK_SIGNING_SECRET;
+    expect(() => getConfig()).toThrow(/SLACK_SIGNING_SECRET/);
+  });
+
+  it('accepts SLACK_SLASH_COMMAND_ENABLED=true with signing secret', () => {
+    process.env.SLACK_SLASH_COMMAND_ENABLED = 'true';
+    process.env.SLACK_SIGNING_SECRET = 'shhh';
+    const cfg = getConfig();
+    expect(cfg.slackSlashCommandEnabled).toBe(true);
+    expect(cfg.slackSigningSecret).toBe('shhh');
+  });
+
+  it('does not enforce reporting validation when both features are disabled', () => {
+    process.env.WEEKLY_DIGEST_ENABLED = 'false';
+    process.env.SLACK_SLASH_COMMAND_ENABLED = 'false';
+    delete process.env.SLACK_WEBHOOK_URL;
+    delete process.env.SLACK_SIGNING_SECRET;
+    delete process.env.NOTION_API_KEY;
+    delete process.env.NOTION_DATABASE_ID;
+    expect(() => getConfig()).not.toThrow();
   });
 });
