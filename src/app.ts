@@ -392,6 +392,7 @@ interface AppEnv {
     walletAddress: string | null;
     walletAuthError: string | null;
     paymentResult?: import('./services/payment/types.js').PaymentResult;
+    pinRequestIdForReporting?: string;
   };
 }
 
@@ -466,7 +467,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
         }
         if (services.paymentRecorder) {
           try {
-            const pinRequestId = c.get('pinRequestIdForReporting' as never) as string | undefined;
+            const pinRequestId = c.get('pinRequestIdForReporting');
             services.paymentRecorder.record(paymentResult, {
               requestId,
               pinRequestId,
@@ -784,6 +785,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       durationMonths,
       sizeBytes
     });
+    c.set('pinRequestIdForReporting', result.requestid);
     return c.json(toPinStatusResponse(result), 202);
   });
 
@@ -824,6 +826,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     const body = parsePinPayload(await parseJsonBody(c));
     const wallet = requireOwnerWallet(c);
     const record = await services.pinningService.replacePin(c.req.param('requestid'), body, wallet);
+    c.set('pinRequestIdForReporting', record.requestid);
     return c.json(toPinStatusResponse(record), 202);
   });
 
