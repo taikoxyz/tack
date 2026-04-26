@@ -163,4 +163,53 @@ describe('DigestBuilder', () => {
     expect(report.requests.total).toBe(1);
     expect(report.requests.paid).toBe(1);
   });
+
+  it('throws when given a non-midnight-aligned window', () => {
+    expect(() =>
+      builder.build({
+        window: { start: '2026-04-21T05:00:00.000Z', end: '2026-04-22T00:00:00.000Z' },
+        now: '2026-04-22T00:00:00.000Z',
+        generatedAt: '2026-04-22T00:00:00.000Z',
+      })
+    ).toThrow(/UTC-midnight/);
+  });
+
+  it('accepts both T00:00:00Z and T00:00:00.000Z formats', () => {
+    expect(() =>
+      builder.build({
+        window: { start: '2026-04-21T00:00:00Z', end: '2026-04-22T00:00:00.000Z' },
+        now: '2026-04-22T00:00:00.000Z',
+        generatedAt: '2026-04-22T00:00:00.000Z',
+      })
+    ).not.toThrow();
+  });
+
+  it('payment exactly at window.start is included; at window.end is excluded', () => {
+    seedPayment(db, { id: 'p_at_start', occurred_at: '2026-04-21T00:00:00.000Z', amount_usd: 1, payer_wallet: '0xa' });
+    seedPayment(db, { id: 'p_at_end', occurred_at: '2026-04-22T00:00:00.000Z', amount_usd: 100, payer_wallet: '0xb' });
+
+    const report = builder.build({
+      window: { start: '2026-04-21T00:00:00.000Z', end: '2026-04-22T00:00:00.000Z' },
+      now: '2026-04-22T00:00:00.000Z',
+      generatedAt: '2026-04-22T00:00:00.000Z',
+    });
+
+    expect(report.revenue.totalUsd).toBe(1);
+    expect(report.wallets.payersInWindow).toBe(1);
+  });
+
+  it('firstTimePayersInWindow respects chronological order regardless of insertion order', () => {
+    // Seed in REVERSE chronological order to ensure the SQL ORDER BY is what's working.
+    seedPayment(db, { id: 'p3', payer_wallet: '0xccc', occurred_at: '2026-04-21T20:00:00.000Z' });
+    seedPayment(db, { id: 'p1', payer_wallet: '0xaaa', occurred_at: '2026-04-21T08:00:00.000Z' });
+    seedPayment(db, { id: 'p2', payer_wallet: '0xbbb', occurred_at: '2026-04-21T12:00:00.000Z' });
+
+    const report = builder.build({
+      window: { start: '2026-04-21T00:00:00.000Z', end: '2026-04-22T00:00:00.000Z' },
+      now: '2026-04-22T00:00:00.000Z',
+      generatedAt: '2026-04-22T00:00:00.000Z',
+    });
+
+    expect(report.wallets.firstTimePayersInWindow).toEqual(['0xaaa', '0xbbb', '0xccc']);
+  });
 });

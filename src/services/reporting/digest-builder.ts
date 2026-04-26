@@ -20,11 +20,17 @@ export interface DigestBuildInput {
 /**
  * Pure function: aggregates a window into a Report.
  *
- * `firstTimePayers` is correct only when the window is fully closed
- * (no future payment can still arrive with `occurred_at` < window.start).
- * The weekly digest cron satisfies this by running on a window that
- * has already ended; do not call this for an open window if you need
- * idempotent reporting.
+ * **Contract**: `window.start` and `window.end` must be UTC-midnight-
+ * aligned ISO strings (e.g. `2026-04-21T00:00:00Z`). The metrics
+ * rollup uses day granularity (`YYYY-MM-DD` keys), so non-midnight
+ * windows would silently expand the metrics range beyond the actual
+ * payment window. We assert and throw rather than risk skew.
+ *
+ * `firstTimePayersInWindow` is correct only when the window is fully
+ * closed (no future payment can still arrive with `occurred_at` <
+ * window.start). The weekly digest cron satisfies this by running on
+ * a window that has already ended; do not call this for an open
+ * window if you need idempotent reporting.
  */
 export class DigestBuilder {
   constructor(private readonly deps: DigestBuilderDeps) {}
@@ -32,6 +38,15 @@ export class DigestBuilder {
   build(input: DigestBuildInput): Report {
     const { payments, metrics, pins } = this.deps;
     const { window, now, generatedAt } = input;
+
+    const isUtcMidnight = (iso: string): boolean =>
+      iso.endsWith('T00:00:00.000Z') || iso.endsWith('T00:00:00Z');
+
+    if (!isUtcMidnight(window.start) || !isUtcMidnight(window.end)) {
+      throw new Error(
+        `DigestBuilder requires UTC-midnight-aligned windows; got start=${window.start} end=${window.end}`
+      );
+    }
 
     const paymentSummary = payments.summarizeWindow(window);
     const firstTimePayers = payments.firstTimePayers(window);
