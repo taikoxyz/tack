@@ -1499,4 +1499,100 @@ describe('API integration', () => {
       expect(paymentRequired.accepts[0].amount).toBe(paymentRequired.accepts[1].amount);
     });
   });
+
+  describe('reporting middleware (T12)', () => {
+    it('increments total on every request', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const reportingApp = buildApp({ metricsRepository });
+
+      await reportingApp.request(new Request('http://localhost/health'));
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBe(1);
+      expect(summary.paid).toBe(0);
+      expect(summary.rejected_402).toBe(0);
+    });
+
+    it('increments rejected_402 on 402 responses', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const reportingApp = buildApp({ metricsRepository });
+
+      // Unpaid POST /pins → 402
+      const res = await reportingApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cid: 'bafy-report-test' })
+        })
+      );
+      expect(res.status).toBe(402);
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBe(1);
+      expect(summary.rejected_402).toBe(1);
+      expect(summary.paid).toBe(0);
+    });
+
+    it('increments paid and calls paymentRecorder.record on 2xx with paymentResult', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const { PaymentRecorder } = await import('../../src/services/reporting/payment-recorder');
+      const { PaymentRepository } = await import('../../src/repositories/payment-repository');
+
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
+      const recordSpy = vi.spyOn(paymentRecorder, 'record');
+
+      const reportingApp = buildApp({ metricsRepository, paymentRecorder });
+
+      // Full paid request: goes 402 first, then paid
+      const paidRes = await paidRequest(reportingApp, 'http://localhost/pins', walletA, () => ({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-paid-report' })
+      }));
+      expect(paidRes.status).toBe(202);
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      // 2 requests total: one 402 (unpaid probe) + one 202 (paid)
+      expect(summary.total).toBe(2);
+      expect(summary.rejected_402).toBe(1);
+      expect(summary.paid).toBe(1);
+      expect(recordSpy).toHaveBeenCalledOnce();
+    });
+
+    it('does not increment paid or call paymentRecorder when paymentResult is absent', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRecorder = { record: vi.fn() };
+
+      const reportingApp = buildApp({ metricsRepository, paymentRecorder: paymentRecorder as never });
+
+      // GET /health — no payment, returns 200
+      await reportingApp.request(new Request('http://localhost/health'));
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBe(1);
+      expect(summary.paid).toBe(0);
+      expect(paymentRecorder.record).not.toHaveBeenCalled();
+    });
+  });
 });

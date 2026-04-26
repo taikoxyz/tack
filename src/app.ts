@@ -371,6 +371,8 @@ export interface AppServices {
   agentCard?: AgentCardConfig;
   defaultDurationMonths?: number;
   maxDurationMonths?: number;
+  paymentRecorder?: import('./services/reporting/payment-recorder.js').PaymentRecorder;
+  metricsRepository?: import('./repositories/metrics-repository.js').MetricsRepository;
 }
 
 interface AppEnv {
@@ -432,20 +434,69 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       }
 
       await next();
+
+      // Reporting: counters + payment recording. Pure side effects; never throw.
+      const status = c.res.status;
+      const day = new Date().toISOString().slice(0, 10);
+
+      if (services.metricsRepository) {
+        try {
+          services.metricsRepository.increment(day, 'total');
+          if (status === 402) {
+            services.metricsRepository.increment(day, 'rejected_402');
+          }
+        } catch (err) {
+          logger.warn({ err, requestId }, 'metrics increment failed');
+        }
+      }
+
+      const paymentResult = c.get('paymentResult');
+
+      if (paymentResult && status >= 200 && status < 300) {
+        if (services.metricsRepository) {
+          try {
+            services.metricsRepository.increment(day, 'paid');
+          } catch (err) {
+            logger.warn({ err, requestId }, 'paid metric increment failed');
+          }
+        }
+        if (services.paymentRecorder) {
+          const pinRequestId = c.get('pinRequestIdForReporting' as never) as string | undefined;
+          services.paymentRecorder.record(paymentResult, {
+            requestId,
+            pinRequestId,
+          });
+        }
+      }
+
       logger.info({
         requestId,
         method: c.req.method,
         path: requestPath,
-        status: c.res.status,
+        status,
         durationMs: Date.now() - requestStartedAt,
         walletAddress: identity.wallet,
       }, 'request handled');
     } catch (error) {
+      const errorStatus = statusFromError(error);
+      const day = new Date().toISOString().slice(0, 10);
+
+      if (services.metricsRepository) {
+        try {
+          services.metricsRepository.increment(day, 'total');
+          if (errorStatus === 402) {
+            services.metricsRepository.increment(day, 'rejected_402');
+          }
+        } catch (err) {
+          logger.warn({ err, requestId }, 'metrics increment failed (error path)');
+        }
+      }
+
       logger.error({
         requestId,
         method: c.req.method,
         path: requestPath,
-        status: statusFromError(error),
+        status: errorStatus,
         durationMs: Date.now() - requestStartedAt,
         walletAddress: identity.wallet,
         err: error
