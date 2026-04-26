@@ -4,12 +4,12 @@ import type { Report } from './types';
 export interface SlackPublisherConfig {
   /**
    * Slack incoming-webhook URL. May be empty string; in that case
-   * post() warn-logs and returns without firing a request — useful
+   * post() info-logs and returns without firing a request — useful
    * for environments where the slash command is enabled but the
    * digest webhook isn't.
    */
   webhookUrl: string;
-  logger: Pick<Logger, 'warn' | 'error'>;
+  logger: Pick<Logger, 'warn' | 'error' | 'info'>;
 }
 
 export interface SlackInlineResponse {
@@ -25,8 +25,20 @@ function formatBytes(n: number): string {
   return `${(n / 1024 ** 4).toFixed(2)} TB`;
 }
 
+const usdFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 function formatUsd(n: number): string {
-  return `$${n.toFixed(2)}`;
+  return usdFormatter.format(n);
+}
+
+function truncateWallet(addr: string): string {
+  if (addr.length <= 12) return addr;
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
 function buildBlocks(report: Report): unknown[] {
@@ -34,7 +46,10 @@ function buildBlocks(report: Report): unknown[] {
   const dateRange = `${r.window.start.slice(0, 10)} → ${r.window.end.slice(0, 10)}`;
   const newPayers = r.wallets.firstTimePayersInWindow.length;
 
-  return [
+  // Slack section blocks accept at most 10 fields. We use 8.
+  // Adding more without splitting into a second section block will
+  // cause Slack to reject the message with HTTP 400.
+  const blocks: unknown[] = [
     { type: 'header', text: { type: 'plain_text', text: `Tack — ${dateRange}` } },
     {
       type: 'section',
@@ -50,6 +65,36 @@ function buildBlocks(report: Report): unknown[] {
       ],
     },
   ];
+
+  if (r.revenue.totalUsd === 0 && r.requests.total === 0) {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '_No paid activity in this window. Note: payment recording started on deploy date — earlier history is not recoverable._',
+        },
+      ],
+    });
+  }
+
+  if (newPayers > 0) {
+    const shown = r.wallets.firstTimePayersInWindow.slice(0, 5).map(truncateWallet);
+    const more = r.wallets.firstTimePayersInWindow.length > 5
+      ? ` (+${r.wallets.firstTimePayersInWindow.length - 5} more)`
+      : '';
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `*New payers:* ${shown.join(', ')}${more}`,
+        },
+      ],
+    });
+  }
+
+  return blocks;
 }
 
 export class SlackPublisher {
@@ -57,7 +102,7 @@ export class SlackPublisher {
 
   async post(report: Report): Promise<void> {
     if (!this.config.webhookUrl) {
-      this.config.logger.warn(
+      this.config.logger.info(
         { reportWindow: report.window },
         'slack post skipped: webhookUrl is empty'
       );

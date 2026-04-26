@@ -26,7 +26,7 @@ describe('SlackPublisher', () => {
   describe('post', () => {
     it('POSTs Block Kit JSON to the webhook URL', async () => {
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
-      const logger = { warn: vi.fn(), error: vi.fn() };
+      const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
       const publisher = new SlackPublisher({ webhookUrl: 'https://hooks.slack.com/x', logger: logger as any });
 
       await publisher.post(sampleReport);
@@ -42,7 +42,7 @@ describe('SlackPublisher', () => {
 
     it('warns and does not throw on fetch failure', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('boom'));
-      const logger = { warn: vi.fn(), error: vi.fn() };
+      const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
       const publisher = new SlackPublisher({ webhookUrl: 'https://hooks.slack.com/x', logger: logger as any });
 
       await expect(publisher.post(sampleReport)).resolves.not.toThrow();
@@ -51,19 +51,20 @@ describe('SlackPublisher', () => {
 
     it('warns on non-2xx response', async () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('rate limited', { status: 429 }));
-      const logger = { warn: vi.fn(), error: vi.fn() };
+      const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
       const publisher = new SlackPublisher({ webhookUrl: 'https://hooks.slack.com/x', logger: logger as any });
       await publisher.post(sampleReport);
       expect(logger.warn).toHaveBeenCalledOnce();
     });
 
-    it('warns when called with empty webhookUrl rather than fetching', async () => {
+    it('logs info when called with empty webhookUrl rather than fetching', async () => {
       const fetchMock = vi.spyOn(globalThis, 'fetch');
-      const logger = { warn: vi.fn(), error: vi.fn() };
+      const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
       const publisher = new SlackPublisher({ webhookUrl: '', logger: logger as any });
       await publisher.post(sampleReport);
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(logger.warn).toHaveBeenCalledOnce();
+      expect(logger.info).toHaveBeenCalledOnce();
+      expect(logger.warn).not.toHaveBeenCalled();
     });
   });
 
@@ -76,13 +77,12 @@ describe('SlackPublisher', () => {
       expect(inline.blocks.length).toBeGreaterThan(0);
     });
 
-    it('post and formatInline produce identical block structure', () => {
+    it('post and formatInline produce identical block structure', async () => {
       const publisher = new SlackPublisher({ webhookUrl: 'https://hooks.slack.com/x', logger: console as any });
       const inline = publisher.formatInline(sampleReport);
 
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
-      // Re-instantiate to avoid concerns about same-instance state
-      void publisher.post(sampleReport);
+      await publisher.post(sampleReport);
       const postBody = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
 
       expect(postBody.blocks).toEqual(inline.blocks);
@@ -126,6 +126,58 @@ describe('SlackPublisher', () => {
       const inline = publisher.formatInline(empty);
       expect(inline.blocks).toBeInstanceOf(Array);
       expect(inline.blocks.length).toBeGreaterThan(0);
+    });
+
+    it('renders truncated addresses for firstTimePayersInWindow', () => {
+      const publisher = new SlackPublisher({ webhookUrl: '', logger: console as any });
+      const report: Report = {
+        ...sampleReport,
+        wallets: { payersInWindow: 4, cumulativePayers: 27, firstTimePayersInWindow: ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222'] },
+      };
+      const inline = publisher.formatInline(report);
+      const text = JSON.stringify(inline.blocks);
+      expect(text).toContain('0x1111…1111');
+      expect(text).toContain('0x2222…2222');
+    });
+
+    it('shows "+N more" when more than 5 first-time payers', () => {
+      const publisher = new SlackPublisher({ webhookUrl: '', logger: console as any });
+      const wallets = Array.from({ length: 7 }, (_, i) =>
+        `0x${String(i).repeat(40).slice(0, 40)}`
+      );
+      const report: Report = {
+        ...sampleReport,
+        wallets: { payersInWindow: 7, cumulativePayers: 27, firstTimePayersInWindow: wallets },
+      };
+      const inline = publisher.formatInline(report);
+      const text = JSON.stringify(inline.blocks);
+      expect(text).toContain('+2 more');
+    });
+
+    it('omits the new-payers context block when there are zero first-time payers', () => {
+      const publisher = new SlackPublisher({ webhookUrl: '', logger: console as any });
+      const report: Report = {
+        ...sampleReport,
+        wallets: { payersInWindow: 1, cumulativePayers: 27, firstTimePayersInWindow: [] },
+      };
+      const inline = publisher.formatInline(report);
+      const hasContext = inline.blocks.some((b: any) => b.type === 'context');
+      expect(hasContext).toBe(false);
+    });
+
+    it('shows the "no activity" disclaimer when revenue and requests are both zero', () => {
+      const empty: Report = {
+        window: { start: '2026-04-20T00:00:00.000Z', end: '2026-04-21T00:00:00.000Z' },
+        generatedAt: '2026-04-21T00:00:00.000Z',
+        revenue: { totalUsd: 0, byProtocol: { x402: { totalUsd: 0, count: 0 }, mpp: { totalUsd: 0, count: 0 } } },
+        pins: { newInWindow: { count: 0, totalBytes: 0 }, active: { count: 0, totalBytes: 0 } },
+        wallets: { payersInWindow: 0, cumulativePayers: 0, firstTimePayersInWindow: [] },
+        requests: { total: 0, paid: 0, rejected_402: 0 },
+      };
+      const publisher = new SlackPublisher({ webhookUrl: '', logger: console as any });
+      const inline = publisher.formatInline(empty);
+      const text = JSON.stringify(inline.blocks);
+      expect(text).toContain('No paid activity');
     });
   });
 });
