@@ -429,4 +429,170 @@ describe('x402 middleware', () => {
     expect(paymentRequired.accepts[0].asset).toBe(taikoChain.usdcAssetAddress);
     expect(paymentRequired.accepts[1].asset).toBe(baseChain.usdcAssetAddress);
   });
+
+  it('sets paymentResult on the request context after a verified settlement', async () => {
+    // paymentResult is set AFTER next() returns (post-settlement) inside the
+    // x402 middleware. To capture it, we register an outermost middleware that
+    // reads paymentResult after its own next() resolves — by then, x402 has
+    // completed its full settlement cycle.
+    let capturedPaymentResult: unknown = undefined;
+
+    const app = new Hono();
+    // Outermost: reads paymentResult after the full middleware chain settles.
+    app.use(async (c, next) => {
+      await next();
+      capturedPaymentResult = (c as any).get('paymentResult');
+    });
+    app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
+    app.post('/pins', (c) => c.json({ ok: true }));
+
+    // First: unpaid request to get the payment requirements.
+    const unpaid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-test' })
+      })
+    );
+    expect(unpaid.status).toBe(402);
+    const paymentRequiredHeader = unpaid.headers.get('payment-required');
+    expect(paymentRequiredHeader).toBeTruthy();
+
+    const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
+    const accepted = paymentRequired.accepts[0];
+
+    // Build a valid-looking payment payload with a known wallet address.
+    const payerWallet = '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+    const paymentPayload: PaymentPayload = {
+      x402Version: paymentRequired.x402Version,
+      accepted,
+      payload: {
+        authorization: {
+          from: payerWallet,
+          to: taikoChain.payTo,
+          value: accepted.amount,
+          validAfter: '0',
+          validBefore: '9999999999',
+          nonce: `0x${'0'.repeat(64)}`
+        },
+        signature: `0x${'1'.repeat(130)}`
+      }
+    };
+
+    // Reset capture before the paid request.
+    capturedPaymentResult = undefined;
+
+    // Paid request — middleware should set paymentResult after settlement.
+    const paid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'payment-signature': encodePaymentSignatureHeader(paymentPayload)
+        },
+        body: JSON.stringify({ cid: 'bafy-test' })
+      })
+    );
+
+    expect(paid.status).toBe(200);
+
+    type CapturedPaymentResult = {
+      wallet: string;
+      protocol: string;
+      chainName: string;
+      chainId: number;
+      assetAddress: string;
+      assetDecimals: number;
+      amountAtomic: string;
+      amountUsd: number;
+      endpoint: string;
+      txHash?: string;
+    };
+    const pr = capturedPaymentResult as CapturedPaymentResult;
+
+    expect(pr).not.toBeUndefined();
+    expect(pr).not.toBeNull();
+    expect(pr.wallet).toBe(payerWallet.toLowerCase());
+    expect(pr.protocol).toBe('x402');
+    expect(pr.chainName).toBe('eip155:167000');
+    expect(pr.chainId).toBe(167000);
+    expect(pr.endpoint).toBe('pin');
+    expect(pr.assetAddress).toBe(taikoChain.usdcAssetAddress.toLowerCase());
+    expect(pr.assetDecimals).toBe(6);
+    expect(typeof pr.amountAtomic).toBe('string');
+    expect(typeof pr.amountUsd).toBe('number');
+    // amountUsd should be a non-negative finite number.
+    expect(Number.isFinite(pr.amountUsd)).toBe(true);
+    expect(pr.amountUsd).toBeGreaterThanOrEqual(0);
+    // txHash is best-effort; the mock facilitator does not set x-payment-response.
+    expect(pr.txHash).toBeUndefined();
+  });
+
+  it('sets endpoint to "retrieval" when path starts with /ipfs/', async () => {
+    const premiumOwner = '0xcccccccccccccccccccccccccccccccccccccccc';
+    let capturedPaymentResult: unknown = undefined;
+
+    const app = new Hono();
+    // Outermost: reads paymentResult after the full middleware chain settles.
+    app.use(async (c, next) => {
+      await next();
+      capturedPaymentResult = (c as any).get('paymentResult');
+    });
+    app.use(
+      createX402PaymentMiddleware(testConfig, mockFacilitator, {
+        resolveRetrievalPayment: (cid) => {
+          if (cid === 'premium-cid') {
+            return { payTo: premiumOwner, priceUsd: 0.0025 };
+          }
+          return null;
+        }
+      })
+    );
+    app.get('/ipfs/:cid', (c) => c.json({ cid: c.req.param('cid') }));
+
+    // First: unpaid request to get the payment requirements.
+    const unpaid = await app.request('http://localhost/ipfs/premium-cid');
+    expect(unpaid.status).toBe(402);
+    const paymentRequiredHeader = unpaid.headers.get('payment-required');
+    expect(paymentRequiredHeader).toBeTruthy();
+
+    const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
+    const accepted = paymentRequired.accepts[0];
+
+    const payerWallet = '0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+    const paymentPayload: PaymentPayload = {
+      x402Version: paymentRequired.x402Version,
+      accepted,
+      payload: {
+        authorization: {
+          from: payerWallet,
+          to: premiumOwner,
+          value: accepted.amount,
+          validAfter: '0',
+          validBefore: '9999999999',
+          nonce: `0x${'0'.repeat(64)}`
+        },
+        signature: `0x${'1'.repeat(130)}`
+      }
+    };
+
+    capturedPaymentResult = undefined;
+
+    const paid = await app.request(
+      new Request('http://localhost/ipfs/premium-cid', {
+        headers: {
+          'payment-signature': encodePaymentSignatureHeader(paymentPayload)
+        }
+      })
+    );
+
+    expect(paid.status).toBe(200);
+
+    const pr = capturedPaymentResult as { endpoint: string; protocol: string; wallet: string };
+    expect(pr).not.toBeUndefined();
+    expect(pr).not.toBeNull();
+    expect(pr.protocol).toBe('x402');
+    expect(pr.endpoint).toBe('retrieval');
+    expect(pr.wallet).toBe(payerWallet.toLowerCase());
+  });
 });

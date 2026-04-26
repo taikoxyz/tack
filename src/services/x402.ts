@@ -351,7 +351,7 @@ function extractTracingHeaders(source: Headers): Headers {
   return headers;
 }
 
-function createPaymentMiddleware(httpServer: x402HTTPResourceServer): MiddlewareHandler {
+function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X402PaymentConfig): MiddlewareHandler {
   let initPromise: Promise<void> | null = httpServer.initialize();
 
   return async (c, next) => {
@@ -438,6 +438,65 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer): Middleware
             Object.entries(settleResult.headers).forEach(([key, value]) => {
               res.headers.set(key, value);
             });
+
+            // Reporting: set paymentResult so PaymentRecorder can write a row.
+            // Wallet: extracted from the EIP-3009 authorization (or permit2 / from)
+            // in the payment payload — the canonical signer of the payment.
+            const wallet = extractWalletFromPayload(paymentPayload) ?? '';
+
+            // Network: paymentRequirements.network is e.g. 'eip155:167000' (Taiko)
+            // or 'eip155:8453' (Base). Parse the chainId.
+            const network = String((paymentRequirements as any).network ?? '');
+            const chainId = network.startsWith('eip155:') ? Number(network.slice('eip155:'.length)) : 0;
+
+            // Asset: paymentRequirements.asset is the lowercased token contract.
+            // Decimals: look up the matching chain in config; default 6.
+            const assetAddress = String((paymentRequirements as any).asset ?? '').toLowerCase();
+            const matchedChain = config.chains.find((ch) => ch.network === network);
+            const assetDecimals = matchedChain?.usdcAssetDecimals ?? 6;
+
+            // Amount: V2 uses `amount`; V1 uses `maxAmountRequired`. Cast to any
+            // to handle both. This is the atomic amount the user paid (it matches
+            // the amount the facilitator actually settled).
+            const amountAtomic = String(
+              (paymentRequirements as any).amount ??
+              (paymentRequirements as any).maxAmountRequired ??
+              '0'
+            );
+            const parsedAmount = Number(amountAtomic);
+            const amountUsd = Number.isFinite(parsedAmount) ? parsedAmount / 10 ** assetDecimals : 0;
+
+            // Endpoint: derive from path (same convention as MPP middleware).
+            const endpoint: 'pin' | 'retrieval' = c.req.path.startsWith('/ipfs/') ? 'retrieval' : 'pin';
+
+            // txHash: x402 settlement responses typically encode the tx hash in
+            // the X-Payment-Response header as base64-JSON ({ transaction: '0x...' }).
+            // Best effort — we don't fail if it can't be decoded.
+            const txHash = ((): string | undefined => {
+              const headerValue =
+                settleResult.headers['x-payment-response'] ??
+                settleResult.headers['X-Payment-Response'];
+              if (!headerValue) return undefined;
+              try {
+                const decoded = JSON.parse(Buffer.from(headerValue, 'base64').toString('utf8')) as { transaction?: unknown };
+                return typeof decoded?.transaction === 'string' ? decoded.transaction : undefined;
+              } catch {
+                return undefined;
+              }
+            })();
+
+            c.set('paymentResult' as any, {
+              wallet,
+              protocol: 'x402',
+              chainName: network,
+              chainId,
+              assetAddress,
+              assetDecimals,
+              amountAtomic,
+              amountUsd,
+              endpoint,
+              txHash,
+            } satisfies PaymentResult);
           }
         } catch (error) {
           logger.error({ err: error, path: context.path, method: context.method }, 'unexpected settlement error');
@@ -557,5 +616,5 @@ export function createX402PaymentMiddleware(
     });
   }
 
-  return createPaymentMiddleware(httpServer);
+  return createPaymentMiddleware(httpServer, config);
 }
