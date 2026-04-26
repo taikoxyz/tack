@@ -1628,6 +1628,229 @@ describe('API integration', () => {
     });
   });
 
+  describe('reporting integration (T21): end-to-end recording', () => {
+    // Shared helpers — all tests in this block use a real PaymentRepository and
+    // a real PaymentRecorder so we can assert on the actual DB rows rather than
+    // spy calls.
+
+    async function buildReportingHarness(overrides?: Partial<Parameters<typeof createApp>[0]>) {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const { PaymentRecorder } = await import('../../src/services/reporting/payment-recorder');
+      const { PaymentRepository } = await import('../../src/repositories/payment-repository');
+
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
+
+      const reportingApp = buildApp({ metricsRepository, paymentRecorder, ...overrides });
+
+      return { metricsRepository, paymentRepository, paymentRecorder, reportingApp };
+    }
+
+    it('x402 paid POST /pins lands a payments row with correct fields', async () => {
+      const { paymentRepository, reportingApp } = await buildReportingHarness();
+
+      const paidRes = await paidRequest(reportingApp, 'http://localhost/pins', walletA, () => ({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-t21-x402' })
+      }));
+      expect(paidRes.status).toBe(202);
+      const createdPin = (await paidRes.json()) as { requestid: string };
+
+      // Query the payments table directly — one row must exist.
+      const rows = db
+        .prepare('SELECT * FROM payments WHERE protocol = ?')
+        .all('x402') as Array<{
+          id: string;
+          protocol: string;
+          payer_wallet: string;
+          amount_atomic: string;
+          endpoint: string;
+          pin_request_id: string | null;
+          request_id: string | null;
+        }>;
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+
+      expect(row.protocol).toBe('x402');
+      // payer_wallet must be stored lowercase (PaymentRecorder.record calls .toLowerCase()).
+      expect(row.payer_wallet).toBe(walletA.toLowerCase());
+      // endpoint must be 'pin' for POST /pins.
+      expect(row.endpoint).toBe('pin');
+      // amount_atomic must be a non-zero numeric string.
+      expect(Number(row.amount_atomic)).toBeGreaterThan(0);
+      // pin_request_id must link back to the created pin (T13 requirement).
+      expect(row.pin_request_id).toBe(createdPin.requestid);
+      // request_id is a per-request UUID — just validate it's present.
+      expect(row.request_id).toBeTruthy();
+
+      // Verify via the repository's typed API as well.
+      const record = paymentRepository.findById(row.id);
+      expect(record).not.toBeNull();
+      expect(record!.protocol).toBe('x402');
+      expect(record!.chain_id).toBe(167000); // Taiko Alethia (eip155:167000)
+      expect(record!.asset_address).toBe(taikoChain.usdcAssetAddress.toLowerCase());
+      expect(record!.asset_decimals).toBe(6);
+    });
+
+    it('MPP paid POST /pins lands a payments row with protocol=mpp', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const { PaymentRecorder } = await import('../../src/services/reporting/payment-recorder');
+      const { PaymentRepository } = await import('../../src/repositories/payment-repository');
+
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
+
+      // Build a dual-protocol app that also wires the real recorder.
+      const MPP_WALLET = '0xdddddddddddddddddddddddddddddddddddddddd';
+      const stub = (() => {
+        const chargeCalls: Array<{ amount: string; recipient?: string }> = [];
+        const handler: MppxChargeHandler & { chargeCalls: typeof chargeCalls } = {
+          chargeCalls,
+          charge: (options) => {
+            chargeCalls.push(options);
+            return (req: Request) => {
+              const authHeader = req.headers.get('Authorization');
+              const hasCredential = authHeader != null && /^payment\s+/i.test(authHeader);
+              if (!hasCredential) {
+                return Promise.resolve({
+                  status: 402 as const,
+                  challenge: new Response(
+                    JSON.stringify({ error: 'Payment required', method: 'tempo' }),
+                    {
+                      status: 402,
+                      headers: {
+                        'Content-Type': 'application/problem+json',
+                        'WWW-Authenticate': `Payment id="stub", realm="tack", method="tempo", intent="charge", amount="${options.amount}"`
+                      }
+                    }
+                  )
+                });
+              }
+              return Promise.resolve({
+                status: 200 as const,
+                withReceipt: (response: Response) => {
+                  const headers = new Headers(response.headers);
+                  headers.set('Payment-Receipt', `receipt-${options.amount}`);
+                  return new Response(response.body, { status: response.status, headers });
+                }
+              });
+            };
+          }
+        };
+        return handler;
+      })();
+
+      const requirementFn = (c: { req: { path: string; method: string } }) => {
+        if (c.req.path === '/pins' && c.req.method === 'POST') {
+          return { amount: '0.001', recipient: taikoChain.payTo };
+        }
+        return null;
+      };
+
+      const mppMiddleware = createMppPaymentMiddleware({
+        mppx: stub,
+        requirementFn: requirementFn as Parameters<typeof createMppPaymentMiddleware>[0]['requirementFn'],
+        resolveVerifiedPayer: () => Promise.resolve(MPP_WALLET),
+        chainContext: createMppChainContext(false),
+      });
+      const mppChallengeEnhancer = createMppChallengeEnhancer({
+        mppx: stub,
+        requirementFn: requirementFn as Parameters<typeof createMppChallengeEnhancer>[0]['requirementFn'],
+        assetDecimals: 6,
+      });
+
+      const mppApp = buildApp({ mppMiddleware, mppChallengeEnhancer, metricsRepository, paymentRecorder });
+
+      const res = await mppApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'authorization': 'Payment stub-credential'
+          },
+          body: JSON.stringify({ cid: 'bafy-t21-mpp' })
+        })
+      );
+      expect(res.status).toBe(202);
+      const createdPin = (await res.json()) as { requestid: string };
+
+      // One payments row with protocol='mpp' must exist in the DB.
+      const rows = db
+        .prepare('SELECT * FROM payments WHERE protocol = ?')
+        .all('mpp') as Array<{
+          id: string;
+          protocol: string;
+          payer_wallet: string;
+          amount_atomic: string;
+          endpoint: string;
+          pin_request_id: string | null;
+        }>;
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+
+      expect(row.protocol).toBe('mpp');
+      expect(row.payer_wallet).toBe(MPP_WALLET.toLowerCase());
+      expect(row.endpoint).toBe('pin');
+      expect(row.amount_atomic).toBe('0.001');
+      expect(row.pin_request_id).toBe(createdPin.requestid);
+
+      // Verify via typed repository API.
+      const record = paymentRepository.findById(row.id);
+      expect(record).not.toBeNull();
+      expect(record!.protocol).toBe('mpp');
+      // Tempo chain id is 4217 (mainnet=false → moderato/testnet in the test harness uses 4217).
+      expect(typeof record!.chain_id).toBe('number');
+      expect(record!.asset_decimals).toBe(6);
+
+      // metricsRepository must show paid=1, total=1 (single request; MPP skips the 402 probe).
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({ startDay: day, endDayExclusive: day + 'z' });
+      expect(summary.paid).toBe(1);
+      expect(summary.total).toBe(1);
+    });
+
+    it('counter buckets tick correctly across free, unpaid-402, and paid requests', async () => {
+      const { metricsRepository, reportingApp } = await buildReportingHarness();
+
+      // 1. Free request — GET /health → 200, no payment.
+      const freeRes = await reportingApp.request(new Request('http://localhost/health'));
+      expect(freeRes.status).toBe(200);
+
+      // 2. Unpaid POST /pins → 402.
+      const unpaidRes = await reportingApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cid: 'bafy-t21-counter-unpaid' })
+        })
+      );
+      expect(unpaidRes.status).toBe(402);
+
+      // 3. Paid POST /pins → 202.
+      const paidRes = await paidRequest(reportingApp, 'http://localhost/pins', walletA, () => ({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-t21-counter-paid' })
+      }));
+      // paidRequest makes an unpaid probe (→ 402) then a paid request (→ 202).
+      expect(paidRes.status).toBe(202);
+
+      // Total requests seen by the middleware:
+      //   1 (GET /health) + 1 (explicit unpaid) + 1 (paidRequest probe) + 1 (actual paid) = 4.
+      // paid = 1 (the successful paid request).
+      // rejected_402 = 2 (explicit unpaid + paidRequest probe).
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({ startDay: day, endDayExclusive: day + 'z' });
+
+      expect(summary.total).toBe(4);
+      expect(summary.paid).toBe(1);
+      expect(summary.rejected_402).toBe(2);
+    });
+  });
+
   describe('Slack slash command (T20 wiring)', () => {
     it('delegates to the handler and returns its response when handler is wired', async () => {
       const stubHandler = vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 }));
