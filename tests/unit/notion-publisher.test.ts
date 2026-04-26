@@ -31,7 +31,12 @@ describe('isoWeekKey', () => {
 describe('NotionPublisher', () => {
   function makeClient() {
     return {
-      databases: { query: vi.fn().mockResolvedValue({ results: [] }) },
+      databases: {
+        retrieve: vi.fn().mockResolvedValue({ data_sources: [{ id: 'ds_default' }] }),
+      },
+      dataSources: {
+        query: vi.fn().mockResolvedValue({ results: [] }),
+      },
       pages: { create: vi.fn().mockResolvedValue({ id: 'page' }) },
     };
   }
@@ -43,9 +48,10 @@ describe('NotionPublisher', () => {
 
     await pub.append(sample);
 
-    expect(client.databases.query).toHaveBeenCalledOnce();
-    const queryArg = client.databases.query.mock.calls[0][0];
-    expect(queryArg.database_id).toBe('db');
+    expect(client.databases.retrieve).toHaveBeenCalledOnce();
+    expect(client.dataSources.query).toHaveBeenCalledOnce();
+    const queryArg = client.dataSources.query.mock.calls[0][0];
+    expect(queryArg.data_source_id).toBe('ds_default');
     expect(queryArg.filter).toEqual({ property: 'Week', title: { equals: '2026-W17' } });
     expect(queryArg.page_size).toBe(1);
 
@@ -72,7 +78,7 @@ describe('NotionPublisher', () => {
 
   it('skips when a row already exists for the week', async () => {
     const client = makeClient();
-    client.databases.query.mockResolvedValueOnce({ results: [{ id: 'existing' }] });
+    client.dataSources.query.mockResolvedValueOnce({ results: [{ id: 'existing' }] });
     const logger = { warn: vi.fn(), error: vi.fn() };
     const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
 
@@ -83,7 +89,7 @@ describe('NotionPublisher', () => {
 
   it('warns and does not throw on Notion query error', async () => {
     const client = makeClient();
-    client.databases.query.mockRejectedValue(new Error('boom'));
+    client.dataSources.query.mockRejectedValue(new Error('boom'));
     const logger = { warn: vi.fn(), error: vi.fn() };
     const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
 
@@ -104,7 +110,7 @@ describe('NotionPublisher', () => {
   it('logs at error level when Notion returns object_not_found (config bug)', async () => {
     const client = makeClient();
     const err = Object.assign(new Error('database not found'), { code: 'object_not_found' });
-    client.databases.query.mockRejectedValue(err);
+    client.dataSources.query.mockRejectedValue(err);
     const logger = { warn: vi.fn(), error: vi.fn() };
     const pub = new NotionPublisher({ client: client as any, databaseId: 'bad', logger: logger as any });
 
@@ -128,7 +134,7 @@ describe('NotionPublisher', () => {
 
   it('logs at warn level for unknown / transient errors', async () => {
     const client = makeClient();
-    client.databases.query.mockRejectedValue(new Error('network blip'));
+    client.dataSources.query.mockRejectedValue(new Error('network blip'));
     const logger = { warn: vi.fn(), error: vi.fn() };
     const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
 
@@ -141,7 +147,7 @@ describe('NotionPublisher', () => {
   it('logs at warn level for rate_limited (transient)', async () => {
     const client = makeClient();
     const err = Object.assign(new Error('rate limited'), { code: 'rate_limited' });
-    client.databases.query.mockRejectedValue(err);
+    client.dataSources.query.mockRejectedValue(err);
     const logger = { warn: vi.fn(), error: vi.fn() };
     const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
 
@@ -164,9 +170,34 @@ describe('NotionPublisher', () => {
 
     await pub.append(oldReport);
 
-    expect(client.databases.query.mock.calls[0][0].filter).toEqual({
+    expect(client.dataSources.query.mock.calls[0][0].filter).toEqual({
       property: 'Week',
       title: { equals: '2024-W01' },
     });
+  });
+
+  it('caches the data source id across multiple appends', async () => {
+    const client = makeClient();
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
+
+    await pub.append(sample);
+    await pub.append({ ...sample, window: { start: '2026-04-27T00:00:00.000Z', end: '2026-05-04T00:00:00.000Z' } });
+
+    expect(client.databases.retrieve).toHaveBeenCalledOnce(); // cached
+    expect(client.dataSources.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('error-logs and skips when database has no data sources', async () => {
+    const client = makeClient();
+    client.databases.retrieve.mockResolvedValueOnce({ data_sources: [] });
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
+
+    await pub.append(sample);
+
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(client.dataSources.query).not.toHaveBeenCalled();
+    expect(client.pages.create).not.toHaveBeenCalled();
   });
 });

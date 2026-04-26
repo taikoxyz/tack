@@ -44,6 +44,7 @@ import { PaymentRecorder } from './services/reporting/payment-recorder';
 import { DigestBuilder } from './services/reporting/digest-builder';
 import { SlackPublisher } from './services/reporting/slack-publisher';
 import { NotionPublisher } from './services/reporting/notion-publisher';
+import type { NotionClientLike } from './services/reporting/notion-publisher';
 import { scheduleWeeklyDigest } from './services/reporting/weekly-digest-job';
 import { createSlackSlashHandler } from './services/reporting/slack-slash-handler';
 
@@ -94,10 +95,7 @@ const slackPublisher = config.slackWebhookUrl
 
 const notionPublisher = (config.notionApiKey && config.notionDatabaseId)
   ? new NotionPublisher({
-      // The Notion SDK Client satisfies NotionClientLike at runtime; the
-      // structural mismatch is a TypeScript version artefact from how the
-      // SDK types its sub-namespaces.
-      client: new NotionClient({ auth: config.notionApiKey }) as unknown as import('./services/reporting/notion-publisher.js').NotionClientLike,
+      client: new NotionClient({ auth: config.notionApiKey }) as NotionClientLike,
       databaseId: config.notionDatabaseId,
       logger,
     })

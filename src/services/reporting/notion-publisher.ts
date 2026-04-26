@@ -22,10 +22,21 @@ const NOTION_CONFIG_ERROR_CODES = new Set([
 
 /**
  * The subset of the Notion SDK we use. Tests inject a stub.
+ * Matches the @notionhq/client v5 surface:
+ *   - databases.retrieve (replaces the removed databases.query)
+ *   - dataSources.query  (new in v5)
+ *   - pages.create       (unchanged)
  */
 export interface NotionClientLike {
-  databases: { query: (args: any) => Promise<any> };
-  pages: { create: (args: any) => Promise<any> };
+  databases: {
+    retrieve: (args: any) => Promise<{ data_sources?: Array<{ id: string }> }>;
+  };
+  dataSources: {
+    query: (args: any) => Promise<{ results: unknown[] }>;
+  };
+  pages: {
+    create: (args: any) => Promise<unknown>;
+  };
 }
 
 export interface NotionPublisherConfig {
@@ -80,13 +91,38 @@ function buildProperties(report: Report): Record<string, unknown> {
 }
 
 export class NotionPublisher {
+  private dataSourceIdCache: string | null = null;
+
   constructor(private readonly config: NotionPublisherConfig) {}
+
+  /** Resolve and cache the data source ID for the configured database. */
+  private async resolveDataSourceId(): Promise<string | null> {
+    if (this.dataSourceIdCache !== null) return this.dataSourceIdCache;
+    const db = await this.config.client.databases.retrieve({
+      database_id: this.config.databaseId,
+    });
+    const dsId = db.data_sources?.[0]?.id;
+    if (!dsId) {
+      this.config.logger.error(
+        { databaseId: this.config.databaseId },
+        'notion database has no data sources — schema misconfigured',
+      );
+      return null;
+    }
+    this.dataSourceIdCache = dsId;
+    return dsId;
+  }
 
   async append(report: Report): Promise<void> {
     const weekKey = isoWeekKey(new Date(report.window.start));
     try {
-      const existing = await this.config.client.databases.query({
-        database_id: this.config.databaseId,
+      const dataSourceId = await this.resolveDataSourceId();
+      if (dataSourceId === null) {
+        return; // already error-logged
+      }
+
+      const existing = await this.config.client.dataSources.query({
+        data_source_id: dataSourceId,
         filter: { property: 'Week', title: { equals: weekKey } },
         page_size: 1,
       });
