@@ -121,6 +121,21 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+export function readPaymentRequirements(req: unknown): {
+  network: string;
+  asset: string;
+  amountAtomic: string;
+} {
+  // PaymentRequirements is a discriminated union of V1 and V2 shapes;
+  // we read both `amount` (V2) and `maxAmountRequired` (V1) defensively.
+  const r = req as Partial<{ network: string; asset: string; amount: string; maxAmountRequired: string }>;
+  return {
+    network: String(r.network ?? ''),
+    asset: String(r.asset ?? '').toLowerCase(),
+    amountAtomic: String(r.amount || r.maxAmountRequired || '0'),
+  };
+}
+
 function extractWalletFromPayload(paymentPayload: PaymentPayload | Record<string, unknown>): string | null {
   const payloadRecord = asRecord((paymentPayload as PaymentPayload).payload ?? (paymentPayload as Record<string, unknown>).payload);
   if (!payloadRecord) {
@@ -444,27 +459,23 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
             // in the payment payload — the canonical signer of the payment.
             const wallet = extractWalletFromPayload(paymentPayload) ?? '';
 
-            // Network: paymentRequirements.network is e.g. 'eip155:167000' (Taiko)
-            // or 'eip155:8453' (Base). Parse the chainId.
-            const network = String((paymentRequirements as any).network ?? '');
+            // Network / asset / amount: probed via typed helper that handles both
+            // V1 (maxAmountRequired) and V2 (amount) PaymentRequirements shapes.
+            const { network, asset: assetAddress, amountAtomic } = readPaymentRequirements(paymentRequirements);
+
+            // ChainId: parse from network string ('eip155:<chainId>').
             const chainId = network.startsWith('eip155:') ? Number(network.slice('eip155:'.length)) : 0;
 
-            // Asset: paymentRequirements.asset is the lowercased token contract.
             // Decimals: look up the matching chain in config; default 6.
-            const assetAddress = String((paymentRequirements as any).asset ?? '').toLowerCase();
             const matchedChain = config.chains.find((ch) => ch.network === network);
             const assetDecimals = matchedChain?.usdcAssetDecimals ?? 6;
 
-            // Amount: V2 uses `amount`; V1 uses `maxAmountRequired`. Cast to any
-            // to handle both. This is the atomic amount the user paid (it matches
-            // the amount the facilitator actually settled).
-            const amountAtomic = String(
-              (paymentRequirements as any).amount ??
-              (paymentRequirements as any).maxAmountRequired ??
-              '0'
-            );
             const parsedAmount = Number(amountAtomic);
             const amountUsd = Number.isFinite(parsedAmount) ? parsedAmount / 10 ** assetDecimals : 0;
+
+            if (amountAtomic === '0') {
+              logger.warn({ paymentRequirements }, 'x402: settled payment with zero amount — treating as zero in PaymentResult');
+            }
 
             // Endpoint: derive from path (same convention as MPP middleware).
             const endpoint: 'pin' | 'retrieval' = c.req.path.startsWith('/ipfs/') ? 'retrieval' : 'pin';
@@ -480,7 +491,8 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
               try {
                 const decoded = JSON.parse(Buffer.from(headerValue, 'base64').toString('utf8')) as { transaction?: unknown };
                 return typeof decoded?.transaction === 'string' ? decoded.transaction : undefined;
-              } catch {
+              } catch (err) {
+                logger.warn({ err, headerValue }, 'x402: failed to decode x-payment-response for txHash');
                 return undefined;
               }
             })();
