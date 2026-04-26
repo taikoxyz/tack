@@ -377,6 +377,7 @@ export interface AppServices {
   maxDurationMonths?: number;
   paymentRecorder?: import('./services/reporting/payment-recorder.js').PaymentRecorder;
   metricsRepository?: import('./repositories/metrics-repository.js').MetricsRepository;
+  slackSlashHandler?: (req: Request) => Promise<Response>;
 }
 
 interface AppEnv {
@@ -541,6 +542,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     });
     return c.json(document, 200, { 'Cache-Control': 'public, max-age=3600' });
   });
+
+  // Slack slash command — only registered when the handler is wired
+  if (services.slackSlashHandler) {
+    app.post('/slack/commands/stats', async (c) => {
+      return services.slackSlashHandler!(c.req.raw);
+    });
+  }
 
   app.get('/llms.txt', (c) => {
     const base = publicBaseUrl ?? 'https://tack.taiko.xyz';

@@ -5,9 +5,12 @@ import { createPublicClient, http } from 'viem';
 import { getTransactionReceipt } from 'viem/actions';
 import { tempo, tempoModerato } from 'viem/chains';
 import type { Context, MiddlewareHandler } from 'hono';
+import { Client as NotionClient } from '@notionhq/client';
 import { getConfig } from './config';
 import { createDb } from './db';
 import { PinRepository } from './repositories/pin-repository';
+import { PaymentRepository } from './repositories/payment-repository';
+import { MetricsRepository } from './repositories/metrics-repository';
 import { IpfsRpcClient } from './services/ipfs-rpc-client';
 import { createApp } from './app';
 import { PinningService } from './services/pinning-service';
@@ -37,6 +40,12 @@ import {
   usdToAssetAmount,
   type LinearPricingConfig
 } from './services/payment/pricing';
+import { PaymentRecorder } from './services/reporting/payment-recorder';
+import { DigestBuilder } from './services/reporting/digest-builder';
+import { SlackPublisher } from './services/reporting/slack-publisher';
+import { NotionPublisher } from './services/reporting/notion-publisher';
+import { scheduleWeeklyDigest } from './services/reporting/weekly-digest-job';
+import { createSlackSlashHandler } from './services/reporting/slack-slash-handler';
 
 function getAppVersion(): string {
   try {
@@ -73,6 +82,49 @@ const pinningService = new PinningService(repository, ipfsClient, config.delegat
   maxGatewayContentSizeBytes: config.gatewayMaxContentSizeBytes,
   replicas: replicaClients
 });
+
+// --- Reporting feature ---
+const paymentRepository = new PaymentRepository(db);
+const metricsRepository = new MetricsRepository(db);
+const paymentRecorder = new PaymentRecorder(paymentRepository, logger);
+
+const slackPublisher = config.slackWebhookUrl
+  ? new SlackPublisher({ webhookUrl: config.slackWebhookUrl, logger })
+  : null;
+
+const notionPublisher = (config.notionApiKey && config.notionDatabaseId)
+  ? new NotionPublisher({
+      // The Notion SDK Client satisfies NotionClientLike at runtime; the
+      // structural mismatch is a TypeScript version artefact from how the
+      // SDK types its sub-namespaces.
+      client: new NotionClient({ auth: config.notionApiKey }) as unknown as import('./services/reporting/notion-publisher.js').NotionClientLike,
+      databaseId: config.notionDatabaseId,
+      logger,
+    })
+  : null;
+
+// The slash command only needs formatInline (a pure transform); it does not
+// post to the digest webhook. If the operator enabled the slash command
+// without a digest webhook, we still need a SlackPublisher instance — the
+// empty webhookUrl is safe because SlackPublisher.post() no-ops when
+// webhookUrl is empty, and formatInline never fetches.
+const slashPublisher = slackPublisher ?? new SlackPublisher({ webhookUrl: '', logger });
+
+const digestBuilder = new DigestBuilder({
+  payments: paymentRepository,
+  metrics: metricsRepository,
+  pins: repository,
+});
+
+const slackSlashHandler = (config.slackSlashCommandEnabled && config.slackSigningSecret)
+  ? createSlackSlashHandler({
+      signingSecret: config.slackSigningSecret,
+      builder: digestBuilder,
+      publisher: slashPublisher,
+      logger,
+    })
+  : null;
+
 // Build the x402 chains array with the operator-configured primary chain
 // first (Taiko by default) and Base always appended. If the operator has
 // explicitly set X402_NETWORK to Base, treat Base as the primary and skip
@@ -334,6 +386,9 @@ const app = createApp({
   rateLimiter,
   defaultDurationMonths: config.x402DefaultDurationMonths,
   maxDurationMonths: config.x402MaxDurationMonths,
+  paymentRecorder,
+  metricsRepository,
+  slackSlashHandler: slackSlashHandler ?? undefined,
   agentCard: {
     name: 'Tack',
     description: 'Pin to IPFS, pay with your wallet. No account needed.',
@@ -363,6 +418,21 @@ const server = serve(
     logger.info({ port: config.port }, 'tack listening');
   }
 );
+
+// Weekly digest cron — only starts when the flag is set and both publishers
+// are configured. Config validation already asserts their presence when the
+// flag is true, so this guard is defensive belt-and-suspenders.
+let weeklyDigestHandle: { stop: () => void } | null = null;
+if (config.weeklyDigestEnabled && slackPublisher && notionPublisher) {
+  weeklyDigestHandle = scheduleWeeklyDigest({
+    builder: digestBuilder,
+    slack: slackPublisher,
+    notion: notionPublisher,
+    logger,
+    cronExpression: config.weeklyDigestCron,
+  });
+  logger.info({ cron: config.weeklyDigestCron }, 'weekly digest scheduled');
+}
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
 const SWEEP_STARTUP_DELAY_MS = 30 * 1000; // 30 seconds
@@ -401,6 +471,7 @@ const shutdown = (signal: NodeJS.Signals): void => {
 
   clearTimeout(sweepStartupTimer);
   clearInterval(sweepInterval);
+  weeklyDigestHandle?.stop();
 
   const forceExitTimer = setTimeout(() => {
     logger.error({ timeoutMs: 10000 }, 'shutdown timed out, forcing exit');

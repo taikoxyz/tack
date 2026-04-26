@@ -1627,4 +1627,31 @@ describe('API integration', () => {
       expect(paymentRecorder.record).not.toHaveBeenCalled();
     });
   });
+
+  describe('Slack slash command (T20 wiring)', () => {
+    it('delegates to the handler and returns its response when handler is wired', async () => {
+      const stubHandler = vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 }));
+      const slashApp = buildApp({ slackSlashHandler: stubHandler });
+
+      const res = await slashApp.request('/slack/commands/stats', {
+        method: 'POST',
+        body: 'text=week',
+      });
+
+      expect(res.status).toBe(401);
+      expect(stubHandler).toHaveBeenCalledOnce();
+    });
+
+    it('returns 404 for /slack/commands/stats when handler is not wired', async () => {
+      // buildApp() with no slackSlashHandler — route must not be registered
+      const noSlashApp = buildApp();
+
+      const res = await noSlashApp.request('/slack/commands/stats', {
+        method: 'POST',
+        body: 'text=week',
+      });
+
+      expect(res.status).toBe(404);
+    });
+  });
 });
