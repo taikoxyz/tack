@@ -24,6 +24,7 @@ import {
   type ResolveVerifiedPayer
 } from '../../src/services/payment/middleware';
 import { createMppChallengeEnhancer } from '../../src/services/payment/challenge-enhancer';
+import { createMppChainContext } from '../../src/services/payment/mpp';
 
 const walletA = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const walletB = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -1208,7 +1209,8 @@ describe('API integration', () => {
         mppx: stub,
         requirementFn: requirementFn as Parameters<typeof createMppPaymentMiddleware>[0]['requirementFn'],
         resolveVerifiedPayer:
-          overrides?.resolveVerifiedPayer ?? (() => Promise.resolve(MPP_VERIFIED_WALLET))
+          overrides?.resolveVerifiedPayer ?? (() => Promise.resolve(MPP_VERIFIED_WALLET)),
+        chainContext: createMppChainContext(false),
       });
       const mppChallengeEnhancer = createMppChallengeEnhancer({
         mppx: stub,

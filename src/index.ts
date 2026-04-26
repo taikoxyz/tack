@@ -17,7 +17,7 @@ import { InMemoryRateLimiter } from './services/rate-limiter';
 import { logger } from './services/logger';
 import { createMppChallengeEnhancer } from './services/payment/challenge-enhancer';
 import { extractIpfsCidFromPath } from './services/payment/http';
-import { createMppInstance } from './services/payment/mpp';
+import { createMppInstance, createMppChainContext } from './services/payment/mpp';
 import { BASE_CHAIN } from './services/payment/chains/base';
 import { createMppPaymentMiddleware } from './services/payment/middleware';
 import { createTempoPayerResolver, type FetchTempoReceipt } from './services/payment/mpp-payer';
@@ -258,6 +258,7 @@ const mppMiddleware: MiddlewareHandler | undefined = mppx && fetchTempoReceipt
   ? createMppPaymentMiddleware({
       mppx,
       requirementFn: resolveMppRequirement,
+      chainContext: createMppChainContext(config.mppTestnet),
       resolveVerifiedPayer: createTempoPayerResolver({
         fetchReceipt: fetchTempoReceipt,
         getContext: async (request) => {

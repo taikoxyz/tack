@@ -2,11 +2,20 @@ import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createMppPaymentMiddleware,
+  type MppChainContext,
   type MppChargeResult,
   type MppxChargeHandler,
   type ResolveVerifiedPayer
 } from '../../../src/services/payment/middleware';
 import type { PaymentResult } from '../../../src/services/payment/types';
+
+const testChainContext: MppChainContext = {
+  chainId: 4217,
+  assetAddress: '0xtoken',
+  assetDecimals: 6,
+  atomicToUsd: (atomic) => Number(atomic) / 1_000_000,
+  endpointFor: (path) => (path.startsWith('/ipfs/') ? 'retrieval' : 'pin'),
+};
 
 function createMockMppx(chargeResult: MppChargeResult): MppxChargeHandler {
   const handler = vi.fn(() => Promise.resolve(chargeResult));
@@ -28,6 +37,7 @@ describe('createMppPaymentMiddleware', () => {
       mppx: mockMppx,
       requirementFn: () => ({ amount: '0.001' }),
       resolveVerifiedPayer: noopResolveVerifiedPayer('0xabcdef1234567890abcdef1234567890abcdef12'),
+      chainContext: testChainContext,
     });
 
     app.get('/test', middleware, (c) => c.json({ ok: true }));
@@ -57,6 +67,7 @@ describe('createMppPaymentMiddleware', () => {
         recipient: '0x1111111111111111111111111111111111111111',
       }),
       resolveVerifiedPayer,
+      chainContext: testChainContext,
     });
 
     app.get('/test', middleware, (c) => {
@@ -113,6 +124,7 @@ describe('createMppPaymentMiddleware', () => {
         mppx: mockMppx,
         requirementFn: () => ({ amount: '0.001' }),
         resolveVerifiedPayer,
+        chainContext: testChainContext,
       })
     );
     app.post('/pins', (c) => {
@@ -144,6 +156,7 @@ describe('createMppPaymentMiddleware', () => {
       mppx: mockMppx,
       requirementFn: () => ({ amount: '0.001' }),
       resolveVerifiedPayer,
+      chainContext: testChainContext,
     });
 
     app.get('/test', middleware, (c) => c.json({ ok: true }));
@@ -172,6 +185,7 @@ describe('createMppPaymentMiddleware', () => {
       mppx: mockMppx,
       requirementFn: () => ({ amount: '0.001' }),
       resolveVerifiedPayer,
+      chainContext: testChainContext,
       onPayerResolutionFailure,
     });
 
@@ -197,6 +211,7 @@ describe('createMppPaymentMiddleware', () => {
       mppx: mockMppx,
       requirementFn: () => null,
       resolveVerifiedPayer: noopResolveVerifiedPayer('0xabcdef1234567890abcdef1234567890abcdef12'),
+      chainContext: testChainContext,
     });
 
     app.get('/free', middleware, (c) => c.json({ free: true }));
@@ -204,5 +219,73 @@ describe('createMppPaymentMiddleware', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ free: true });
+  });
+
+  it('populates reporting fields on paymentResult after a successful charge', async () => {
+    const withReceipt = vi.fn((res: Response) => res);
+    const mockMppx = createMockMppx({ status: 200, withReceipt });
+    const verifiedPayer = '0xcccccccccccccccccccccccccccccccccccccccc';
+    const resolveVerifiedPayer: ResolveVerifiedPayer = vi.fn(() => Promise.resolve(verifiedPayer));
+
+    type Env = { Variables: { paymentResult?: PaymentResult } };
+    const app = new Hono<Env>();
+    const middleware = createMppPaymentMiddleware({
+      mppx: mockMppx,
+      requirementFn: () => ({ amount: '2000000', recipient: '0x1234567890123456789012345678901234567890' }),
+      resolveVerifiedPayer,
+      chainContext: testChainContext,
+    });
+
+    app.post('/pins', middleware, (c) => {
+      const result = c.get('paymentResult');
+      return c.json(result ?? null);
+    });
+
+    const res = await app.request('/pins', {
+      method: 'POST',
+      headers: { 'Authorization': 'Payment eyJ0ZXN0IjoiY3JlZGVudGlhbCJ9' },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PaymentResult;
+    expect(body.wallet).toBe(verifiedPayer);
+    expect(body.protocol).toBe('mpp');
+    expect(body.chainName).toBe('tempo');
+    expect(body.chainId).toBe(4217);
+    expect(body.assetAddress).toBe('0xtoken');
+    expect(body.assetDecimals).toBe(6);
+    expect(body.amountAtomic).toBe('2000000');
+    expect(body.amountUsd).toBeCloseTo(2.0);
+    expect(body.endpoint).toBe('pin');
+  });
+
+  it('sets endpoint to retrieval for /ipfs/ paths', async () => {
+    const withReceipt = vi.fn((res: Response) => res);
+    const mockMppx = createMockMppx({ status: 200, withReceipt });
+    const resolveVerifiedPayer: ResolveVerifiedPayer = vi.fn(() =>
+      Promise.resolve('0xdddddddddddddddddddddddddddddddddddddddd')
+    );
+
+    type Env = { Variables: { paymentResult?: PaymentResult } };
+    const app = new Hono<Env>();
+    const middleware = createMppPaymentMiddleware({
+      mppx: mockMppx,
+      requirementFn: () => ({ amount: '500000' }),
+      resolveVerifiedPayer,
+      chainContext: testChainContext,
+    });
+
+    app.get('/ipfs/:cid', middleware, (c) => {
+      const result = c.get('paymentResult');
+      return c.json({ endpoint: result?.endpoint });
+    });
+
+    const res = await app.request('/ipfs/bafytest', {
+      headers: { 'Authorization': 'Payment eyJ0ZXN0IjoiY3JlZGVudGlhbCJ9' },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { endpoint?: string };
+    expect(body.endpoint).toBe('retrieval');
   });
 });

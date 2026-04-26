@@ -2,6 +2,16 @@ import type { Context, Next, MiddlewareHandler } from 'hono';
 import { extractPaymentAuthorizationCredential } from './http.js';
 import type { PaymentResult } from './types.js';
 
+export interface MppChainContext {
+  chainId: number;
+  assetAddress: string;
+  assetDecimals: number;
+  /** Convert atomic amount string to USD. */
+  atomicToUsd: (amountAtomic: string) => number;
+  /** Decide endpoint from request path. */
+  endpointFor: (path: string) => 'pin' | 'retrieval';
+}
+
 export interface MppPaymentRequirement {
   amount: string;
   recipient?: string;
@@ -38,6 +48,7 @@ interface MppPaymentMiddlewareConfig {
   mppx: MppxChargeHandler;
   requirementFn: (c: Context) => MppPaymentRequirement | null | Promise<MppPaymentRequirement | null>;
   resolveVerifiedPayer: ResolveVerifiedPayer;
+  chainContext: MppChainContext;
   /** Optional logger hook for payer-resolution failures. */
   onPayerResolutionFailure?: (error: unknown, request: Request) => void;
 }
@@ -61,7 +72,7 @@ function payerResolutionFailedResponse(): Response {
 }
 
 export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): MiddlewareHandler {
-  const { mppx, requirementFn, resolveVerifiedPayer, onPayerResolutionFailure } = config;
+  const { mppx, requirementFn, resolveVerifiedPayer, chainContext, onPayerResolutionFailure } = config;
 
   return async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
@@ -104,6 +115,12 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
       wallet,
       protocol: 'mpp',
       chainName: 'tempo',
+      chainId: chainContext.chainId,
+      assetAddress: chainContext.assetAddress,
+      assetDecimals: chainContext.assetDecimals,
+      amountAtomic: requirement.amount,
+      amountUsd: chainContext.atomicToUsd(requirement.amount),
+      endpoint: chainContext.endpointFor(c.req.path),
     } satisfies PaymentResult);
 
     await next();
