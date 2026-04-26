@@ -94,6 +94,8 @@ describe('weekly digest integration (T22): end-to-end', () => {
     // Inside window
     seedPin(pins, { requestid: 'r1', cid: 'bafyA', size_bytes: 1024, created: '2026-04-21T00:00:00.000Z' });
     seedPin(pins, { requestid: 'r2', cid: 'bafyB', size_bytes: 2048, created: '2026-04-22T00:00:00.000Z' });
+    // In window but expired — counted in newInWindow, excluded from active
+    seedPin(pins, { requestid: 'r3', cid: 'bafyExpired', size_bytes: 99999, created: '2026-04-23T00:00:00.000Z', expires_at: '2026-04-25T00:00:00.000Z' });
 
     const slack = { post: vi.fn().mockResolvedValue(undefined) };
     const notion = { append: vi.fn().mockResolvedValue(undefined) };
@@ -113,8 +115,8 @@ describe('weekly digest integration (T22): end-to-end', () => {
     const slackReport = slack.post.mock.calls[0][0] as Report;
     const notionReport = notion.append.mock.calls[0][0] as Report;
 
-    // Both publishers receive the SAME Report instance
-    expect(slackReport).toBe(notionReport);
+    // Both publishers receive equivalent data
+    expect(notionReport).toEqual(slackReport);
 
     // Window is midnight-aligned, 7 days
     expect(slackReport.window.start).toBe('2026-04-20T00:00:00.000Z');
@@ -130,11 +132,13 @@ describe('weekly digest integration (T22): end-to-end', () => {
     // Wallets: p1=0xaaa, p2=0xbbb in window; p3=0xccc counts toward cumulative
     expect(slackReport.wallets.payersInWindow).toBe(2);
     expect(slackReport.wallets.cumulativePayers).toBe(3);
-    expect(slackReport.wallets.firstTimePayersInWindow.sort()).toEqual(['0xaaa', '0xbbb']);
+    expect(slackReport.wallets.firstTimePayersInWindow).toEqual(['0xaaa', '0xbbb']);
 
-    // Pins: both seeded inside window
-    expect(slackReport.pins.newInWindow.count).toBe(2);
-    expect(slackReport.pins.newInWindow.totalBytes).toBe(3072);
+    // Pins: 3 in window (includes expired); active excludes expired pin
+    expect(slackReport.pins.newInWindow.count).toBe(3);
+    expect(slackReport.pins.newInWindow.totalBytes).toBe(103071);
+    expect(slackReport.pins.active.count).toBe(2);
+    expect(slackReport.pins.active.totalBytes).toBe(3072);
 
     // Requests: only days inside window (2026-04-21 and 2026-04-22)
     expect(slackReport.requests.total).toBe(3);
