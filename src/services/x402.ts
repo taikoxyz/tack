@@ -480,19 +480,24 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
             // Endpoint: derive from path (same convention as MPP middleware).
             const endpoint: 'pin' | 'retrieval' = c.req.path.startsWith('/ipfs/') ? 'retrieval' : 'pin';
 
-            // txHash: x402 settlement responses typically encode the tx hash in
-            // the X-Payment-Response header as base64-JSON ({ transaction: '0x...' }).
-            // Best effort — we don't fail if it can't be decoded.
+            // x402 facilitators emit the tx hash in the settlement response header.
+            // The SDK's resource-server settle path uses `PAYMENT-RESPONSE` (uppercase);
+            // older/external facilitators may use the more conventional
+            // `x-payment-response`. We check all reasonable casings to be robust.
             const txHash = ((): string | undefined => {
+              const headers = settleResult.headers;
               const headerValue =
-                settleResult.headers['x-payment-response'] ??
-                settleResult.headers['X-Payment-Response'];
+                headers['PAYMENT-RESPONSE'] ??
+                headers['Payment-Response'] ??
+                headers['payment-response'] ??
+                headers['x-payment-response'] ??
+                headers['X-Payment-Response'];
               if (!headerValue) return undefined;
               try {
                 const decoded = JSON.parse(Buffer.from(headerValue, 'base64').toString('utf8')) as { transaction?: unknown };
                 return typeof decoded?.transaction === 'string' ? decoded.transaction : undefined;
               } catch (err) {
-                logger.warn({ err, headerValue }, 'x402: failed to decode x-payment-response for txHash');
+                logger.warn({ err, headerValue }, 'x402: failed to decode payment response for txHash');
                 return undefined;
               }
             })();

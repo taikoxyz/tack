@@ -315,6 +315,25 @@ describe('x402 txHash decoding', () => {
     expect(decodeTxHash(noTx)).toBeUndefined();
   });
 
+  it('decodes txHash from PAYMENT-RESPONSE header (SDK casing)', () => {
+    // Replicate the decode IIFE logic with PAYMENT-RESPONSE casing
+    const headers: Record<string, string> = {
+      'PAYMENT-RESPONSE': Buffer.from(JSON.stringify({ transaction: '0xabc123' })).toString('base64'),
+    };
+
+    // Mirror the lookup chain from x402.ts
+    const headerValue =
+      headers['PAYMENT-RESPONSE'] ??
+      headers['Payment-Response'] ??
+      headers['payment-response'] ??
+      headers['x-payment-response'] ??
+      headers['X-Payment-Response'];
+
+    expect(headerValue).toBeDefined();
+    const decoded = JSON.parse(Buffer.from(headerValue!, 'base64').toString('utf8'));
+    expect(decoded.transaction).toBe('0xabc123');
+  });
+
   it('middleware txHash is undefined when x-payment-response header is absent (mock facilitator)', async () => {
     // Confirm via the full middleware harness that when the mock facilitator
     // does not produce an x-payment-response header, txHash is undefined.
@@ -372,7 +391,9 @@ describe('x402 txHash decoding', () => {
     expect(paid.status).toBe(200);
 
     const pr = capturedPaymentResult as { txHash?: string };
-    expect(pr.txHash).toBeUndefined();
+    // The x402HTTPResourceServer emits the settlement result as PAYMENT-RESPONSE
+    // (uppercase). Our lookup now correctly finds it, so txHash is populated.
+    expect(pr.txHash).toBe('0xtest');
   });
 });
 
@@ -661,8 +682,10 @@ describe('x402 middleware', () => {
     // amountUsd should be a non-negative finite number.
     expect(Number.isFinite(pr.amountUsd)).toBe(true);
     expect(pr.amountUsd).toBeGreaterThanOrEqual(0);
-    // txHash is best-effort; the mock facilitator does not set x-payment-response.
-    expect(pr.txHash).toBeUndefined();
+    // txHash: the x402HTTPResourceServer emits the settlement result as PAYMENT-RESPONSE
+    // (uppercase). Our lookup now correctly finds it, so txHash is populated from the
+    // mock facilitator's transaction value.
+    expect(pr.txHash).toBe('0xtest');
   });
 
   it('sets endpoint to "retrieval" when path starts with /ipfs/', async () => {
