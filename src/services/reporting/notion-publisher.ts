@@ -1,5 +1,24 @@
+/**
+ * NotionPublisher — appends a row to the operator-configured Notion
+ * database for the weekly digest, idempotent by ISO week key.
+ *
+ * Property keys (`Window Start`, `Revenue USD`, `402s`, etc.) MUST match
+ * the Notion DB schema EXACTLY — case- and space-sensitive. Notion is
+ * configured by the operator per .env.example (NOTION_DATABASE_ID). If
+ * a column is renamed in Notion without updating this file, the API
+ * returns `validation_error`, which we now log at error level (not
+ * warn) so on-call sees it.
+ */
+
 import type { Logger } from 'pino';
 import type { Report } from './types';
+
+const NOTION_CONFIG_ERROR_CODES = new Set([
+  'object_not_found', // wrong databaseId or DB unshared from integration
+  'validation_error', // schema mismatch (missing/renamed column, wrong type)
+  'unauthorized', // bad token
+  'restricted_resource', // permission issue
+]);
 
 /**
  * The subset of the Notion SDK we use. Tests inject a stub.
@@ -74,7 +93,13 @@ export class NotionPublisher {
         properties: buildProperties(report),
       });
     } catch (err) {
-      this.config.logger.warn({ err, weekKey }, 'notion append failed');
+      const code = (err as { code?: string }).code;
+      const isConfigBug = typeof code === 'string' && NOTION_CONFIG_ERROR_CODES.has(code);
+      const log = isConfigBug ? this.config.logger.error : this.config.logger.warn;
+      log(
+        { err, code, weekKey, databaseId: this.config.databaseId },
+        isConfigBug ? 'notion append failed (config bug)' : 'notion append failed (transient)',
+      );
     }
   }
 }

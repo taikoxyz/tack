@@ -100,4 +100,73 @@ describe('NotionPublisher', () => {
     await expect(pub.append(sample)).resolves.not.toThrow();
     expect(logger.warn).toHaveBeenCalledOnce();
   });
+
+  it('logs at error level when Notion returns object_not_found (config bug)', async () => {
+    const client = makeClient();
+    const err = Object.assign(new Error('database not found'), { code: 'object_not_found' });
+    client.databases.query.mockRejectedValue(err);
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const pub = new NotionPublisher({ client: client as any, databaseId: 'bad', logger: logger as any });
+
+    await pub.append(sample);
+
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('logs at error level for validation_error (column rename)', async () => {
+    const client = makeClient();
+    const err = Object.assign(new Error('validation failed'), { code: 'validation_error' });
+    client.pages.create.mockRejectedValue(err);
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
+
+    await pub.append(sample);
+
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+
+  it('logs at warn level for unknown / transient errors', async () => {
+    const client = makeClient();
+    client.databases.query.mockRejectedValue(new Error('network blip'));
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
+
+    await pub.append(sample);
+
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('logs at warn level for rate_limited (transient)', async () => {
+    const client = makeClient();
+    const err = Object.assign(new Error('rate limited'), { code: 'rate_limited' });
+    client.databases.query.mockRejectedValue(err);
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
+
+    await pub.append(sample);
+
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('uses report.window.start for ISO week key, not the current time', async () => {
+    const client = makeClient();
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const pub = new NotionPublisher({ client: client as any, databaseId: 'db', logger: logger as any });
+
+    // Report whose window.start is far from current time
+    const oldReport: Report = {
+      ...sample,
+      window: { start: '2024-01-01T00:00:00.000Z', end: '2024-01-08T00:00:00.000Z' },
+    };
+
+    await pub.append(oldReport);
+
+    expect(client.databases.query.mock.calls[0][0].filter).toEqual({
+      property: 'Week',
+      title: { equals: '2024-W01' },
+    });
+  });
 });
