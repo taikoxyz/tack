@@ -1,21 +1,46 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runWeeklyDigest, scheduleWeeklyDigest } from '../../src/services/reporting/weekly-digest-job';
+import type { DigestBuilder, DigestBuildInput } from '../../src/services/reporting/digest-builder';
+import type { SlackPublisher } from '../../src/services/reporting/slack-publisher';
+import type { NotionPublisher } from '../../src/services/reporting/notion-publisher';
 import type { Report } from '../../src/services/reporting/types';
+import type { Logger } from 'pino';
+
+/** Local typed mock shape for DigestBuilder.build with tracked calls. */
+interface BuildMock {
+  (input: DigestBuildInput): Report;
+  mock: { calls: [DigestBuildInput][] };
+  mockReturnValue(v: Report): this;
+  mockImplementation(fn: () => never): this;
+}
 
 const fakeReport = { window: { start: '', end: '' } } as unknown as Report;
 
+function makeBuilder(report: Report = fakeReport) {
+  return { build: vi.fn().mockReturnValue(report) as unknown as BuildMock };
+}
+function makeSlack() {
+  return { post: vi.fn().mockResolvedValue(undefined) } satisfies Pick<SlackPublisher, 'post'>;
+}
+function makeNotion() {
+  return { append: vi.fn().mockResolvedValue(undefined) } satisfies Pick<NotionPublisher, 'append'>;
+}
+function makeLogger() {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn() } satisfies Pick<Logger, 'info' | 'warn' | 'error'>;
+}
+
 describe('runWeeklyDigest', () => {
   it('builds a Report for [today_midnight - 7d, today_midnight)', async () => {
-    const builder = { build: vi.fn().mockReturnValue(fakeReport) };
-    const slack = { post: vi.fn().mockResolvedValue(undefined) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const builder = makeBuilder();
+    const slack = makeSlack();
+    const notion = makeNotion();
+    const logger = makeLogger();
 
     await runWeeklyDigest({
-      builder: builder as any,
-      slack: slack as any,
-      notion: notion as any,
-      logger: logger as any,
+      builder: builder as unknown as DigestBuilder,
+      slack: slack as unknown as SlackPublisher,
+      notion: notion as unknown as NotionPublisher,
+      logger,
       now: () => new Date('2026-04-27T09:00:00.000Z'),
     });
 
@@ -26,14 +51,14 @@ describe('runWeeklyDigest', () => {
   });
 
   it('publishes to Slack and Notion in parallel', async () => {
-    const builder = { build: vi.fn().mockReturnValue(fakeReport) };
-    const slack = { post: vi.fn().mockResolvedValue(undefined) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const builder = makeBuilder();
+    const slack = makeSlack();
+    const notion = makeNotion();
+    const logger = makeLogger();
 
     await runWeeklyDigest({
-      builder: builder as any, slack: slack as any, notion: notion as any,
-      logger: logger as any, now: () => new Date('2026-04-27T09:00:00.000Z'),
+      builder: builder as unknown as DigestBuilder, slack: slack as unknown as SlackPublisher, notion: notion as unknown as NotionPublisher,
+      logger, now: () => new Date('2026-04-27T09:00:00.000Z'),
     });
 
     expect(slack.post).toHaveBeenCalledWith(fakeReport);
@@ -41,14 +66,14 @@ describe('runWeeklyDigest', () => {
   });
 
   it('continues to Notion even if Slack throws', async () => {
-    const builder = { build: vi.fn().mockReturnValue(fakeReport) };
-    const slack = { post: vi.fn().mockRejectedValue(new Error('slack down')) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const builder = makeBuilder();
+    const slack = { post: vi.fn().mockRejectedValue(new Error('slack down')) } satisfies Pick<SlackPublisher, 'post'>;
+    const notion = makeNotion();
+    const logger = makeLogger();
 
     await expect(runWeeklyDigest({
-      builder: builder as any, slack: slack as any, notion: notion as any,
-      logger: logger as any, now: () => new Date('2026-04-27T09:00:00.000Z'),
+      builder: builder as unknown as DigestBuilder, slack: slack as unknown as SlackPublisher, notion: notion as unknown as NotionPublisher,
+      logger, now: () => new Date('2026-04-27T09:00:00.000Z'),
     })).resolves.not.toThrow();
 
     expect(notion.append).toHaveBeenCalledOnce();
@@ -56,14 +81,14 @@ describe('runWeeklyDigest', () => {
   });
 
   it('logs error and does not throw if both Slack and Notion fail', async () => {
-    const builder = { build: vi.fn().mockReturnValue(fakeReport) };
-    const slack = { post: vi.fn().mockRejectedValue(new Error('slack')) };
-    const notion = { append: vi.fn().mockRejectedValue(new Error('notion')) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const builder = makeBuilder();
+    const slack = { post: vi.fn().mockRejectedValue(new Error('slack')) } satisfies Pick<SlackPublisher, 'post'>;
+    const notion = { append: vi.fn().mockRejectedValue(new Error('notion')) } satisfies Pick<NotionPublisher, 'append'>;
+    const logger = makeLogger();
 
     await expect(runWeeklyDigest({
-      builder: builder as any, slack: slack as any, notion: notion as any,
-      logger: logger as any, now: () => new Date('2026-04-27T09:00:00.000Z'),
+      builder: builder as unknown as DigestBuilder, slack: slack as unknown as SlackPublisher, notion: notion as unknown as NotionPublisher,
+      logger, now: () => new Date('2026-04-27T09:00:00.000Z'),
     })).resolves.not.toThrow();
 
     // Both publishers' failures should be warn-logged (or at minimum, no throw)
@@ -71,14 +96,14 @@ describe('runWeeklyDigest', () => {
   });
 
   it('logs error and does not throw if builder.build throws', async () => {
-    const builder = { build: vi.fn().mockImplementation(() => { throw new Error('build broke'); }) };
-    const slack = { post: vi.fn().mockResolvedValue(undefined) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const builder = { build: vi.fn().mockImplementation(() => { throw new Error('build broke'); }) as unknown as BuildMock };
+    const slack = makeSlack();
+    const notion = makeNotion();
+    const logger = makeLogger();
 
     await expect(runWeeklyDigest({
-      builder: builder as any, slack: slack as any, notion: notion as any,
-      logger: logger as any, now: () => new Date('2026-04-27T09:00:00.000Z'),
+      builder: builder as unknown as DigestBuilder, slack: slack as unknown as SlackPublisher, notion: notion as unknown as NotionPublisher,
+      logger, now: () => new Date('2026-04-27T09:00:00.000Z'),
     })).resolves.not.toThrow();
 
     expect(logger.error).toHaveBeenCalledOnce();
@@ -87,14 +112,14 @@ describe('runWeeklyDigest', () => {
   });
 
   it('window end is always midnight even when fire time is 09:00 UTC', async () => {
-    const builder = { build: vi.fn().mockReturnValue(fakeReport) };
-    const slack = { post: vi.fn().mockResolvedValue(undefined) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const builder = makeBuilder();
+    const slack = makeSlack();
+    const notion = makeNotion();
+    const logger = makeLogger();
 
     await runWeeklyDigest({
-      builder: builder as any, slack: slack as any, notion: notion as any,
-      logger: logger as any, now: () => new Date('2026-04-27T09:00:00.000Z'),
+      builder: builder as unknown as DigestBuilder, slack: slack as unknown as SlackPublisher, notion: notion as unknown as NotionPublisher,
+      logger, now: () => new Date('2026-04-27T09:00:00.000Z'),
     });
 
     const arg = builder.build.mock.calls[0][0];
@@ -103,12 +128,12 @@ describe('runWeeklyDigest', () => {
 });
 
 describe('scheduleWeeklyDigest', () => {
-  function makeDeps(logger?: any) {
+  function makeDeps(logger?: Pick<Logger, 'info' | 'warn' | 'error'>) {
     return {
-      builder: {} as any,
-      slack: {} as any,
-      notion: {} as any,
-      logger: logger ?? { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      builder: {} as unknown as DigestBuilder,
+      slack: {} as unknown as SlackPublisher,
+      notion: {} as unknown as NotionPublisher,
+      logger: logger ?? makeLogger(),
     };
   }
 
@@ -131,7 +156,7 @@ describe('scheduleWeeklyDigest', () => {
   });
 
   it('returns a no-op handle and error-logs when cron expression is invalid', () => {
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const logger = makeLogger();
     const fakeCronLib = {
       validate: vi.fn().mockReturnValue(false),
       schedule: vi.fn(),
@@ -149,7 +174,7 @@ describe('scheduleWeeklyDigest', () => {
   });
 
   it('returns a no-op handle and error-logs when cron.schedule throws', () => {
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const logger = makeLogger();
     const fakeCronLib = {
       validate: vi.fn().mockReturnValue(true),
       schedule: vi.fn().mockImplementation(() => { throw new Error('cron broke'); }),

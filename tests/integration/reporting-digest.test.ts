@@ -6,7 +6,10 @@ import { MetricsRepository } from '../../src/repositories/metrics-repository';
 import { PinRepository } from '../../src/repositories/pin-repository';
 import { DigestBuilder } from '../../src/services/reporting/digest-builder';
 import { runWeeklyDigest } from '../../src/services/reporting/weekly-digest-job';
+import type { SlackPublisher } from '../../src/services/reporting/slack-publisher';
+import type { NotionPublisher } from '../../src/services/reporting/notion-publisher';
 import type { Report } from '../../src/services/reporting/types';
+import type { Logger } from 'pino';
 
 const seedPayment = (db: Database.Database, overrides: Partial<{
   id: string; occurred_at: string; protocol: 'x402' | 'mpp'; amount_usd: number;
@@ -97,15 +100,15 @@ describe('weekly digest integration (T22): end-to-end', () => {
     // In window but expired — counted in newInWindow, excluded from active
     seedPin(pins, { requestid: 'r3', cid: 'bafyExpired', size_bytes: 99999, created: '2026-04-23T00:00:00.000Z', expires_at: '2026-04-25T00:00:00.000Z' });
 
-    const slack = { post: vi.fn().mockResolvedValue(undefined) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const slack = { post: vi.fn().mockResolvedValue(undefined) } satisfies Pick<SlackPublisher, 'post'>;
+    const notion = { append: vi.fn().mockResolvedValue(undefined) } satisfies Pick<NotionPublisher, 'append'>;
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } satisfies Pick<Logger, 'info' | 'warn' | 'error'>;
 
     await runWeeklyDigest({
       builder,
-      slack: slack as any,
-      notion: notion as any,
-      logger: logger as any,
+      slack: slack as unknown as SlackPublisher,
+      notion: notion as unknown as NotionPublisher,
+      logger,
       now: () => fakeNow,
     });
 
@@ -147,15 +150,15 @@ describe('weekly digest integration (T22): end-to-end', () => {
   });
 
   it('publishes empty zeros to both publishers when nothing has happened', async () => {
-    const slack = { post: vi.fn().mockResolvedValue(undefined) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const slack = { post: vi.fn().mockResolvedValue(undefined) } satisfies Pick<SlackPublisher, 'post'>;
+    const notion = { append: vi.fn().mockResolvedValue(undefined) } satisfies Pick<NotionPublisher, 'append'>;
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } satisfies Pick<Logger, 'info' | 'warn' | 'error'>;
 
     await runWeeklyDigest({
       builder,
-      slack: slack as any,
-      notion: notion as any,
-      logger: logger as any,
+      slack: slack as unknown as SlackPublisher,
+      notion: notion as unknown as NotionPublisher,
+      logger,
       now: () => new Date('2026-04-27T09:00:00.000Z'),
     });
 
@@ -172,15 +175,15 @@ describe('weekly digest integration (T22): end-to-end', () => {
   it('continues to Notion when Slack post throws', async () => {
     seedPayment(db, { id: 'p1', amount_usd: 1, occurred_at: '2026-04-21T10:00:00.000Z' });
 
-    const slack = { post: vi.fn().mockRejectedValue(new Error('slack down')) };
-    const notion = { append: vi.fn().mockResolvedValue(undefined) };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const slack = { post: vi.fn().mockRejectedValue(new Error('slack down')) } satisfies Pick<SlackPublisher, 'post'>;
+    const notion = { append: vi.fn().mockResolvedValue(undefined) } satisfies Pick<NotionPublisher, 'append'>;
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } satisfies Pick<Logger, 'info' | 'warn' | 'error'>;
 
     await runWeeklyDigest({
       builder,
-      slack: slack as any,
-      notion: notion as any,
-      logger: logger as any,
+      slack: slack as unknown as SlackPublisher,
+      notion: notion as unknown as NotionPublisher,
+      logger,
       now: () => new Date('2026-04-27T09:00:00.000Z'),
     });
 

@@ -1,4 +1,3 @@
-import Database from 'better-sqlite3';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -39,7 +38,7 @@ describe('createDb', () => {
     expect(cols.some((c) => c.name === 'size_bytes')).toBe(true);
   });
 
-  it('migrations are idempotent and preserve existing data on re-run', async () => {
+  it('migrations are idempotent and preserve existing data on re-run', () => {
     const tmpPath = `${tmpdir()}/tack-test-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`;
     try {
       const first = createDb(tmpPath);

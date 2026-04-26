@@ -19,7 +19,7 @@ describe('PinRepository.summarize', () => {
     requestid: overrides.requestid ?? 'req',
     cid: overrides.cid ?? 'bafy',
     name: null,
-    status: (overrides.status ?? 'pinned') as 'pinned' | 'failed' | 'queued' | 'pinning',
+    status: overrides.status ?? 'pinned',
     origins: [],
     meta: {},
     delegates: [],

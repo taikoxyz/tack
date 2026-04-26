@@ -1,7 +1,17 @@
 import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSlackSlashHandler } from '../../src/services/reporting/slack-slash-handler';
+import type { DigestBuilder, DigestBuildInput } from '../../src/services/reporting/digest-builder';
+import type { SlackPublisher } from '../../src/services/reporting/slack-publisher';
 import type { Report } from '../../src/services/reporting/types';
+
+/** Local typed mock shape: a vi.fn with tracked calls of DigestBuildInput. */
+interface BuildMock {
+  (input: DigestBuildInput): Report;
+  mock: { calls: [DigestBuildInput][] };
+  mockReturnValue(v: Report): this;
+  mockImplementation(fn: () => never): this;
+}
 
 const SECRET = 'test-signing-secret-32-bytes-min!!!!';
 const FIXED_NOW = new Date('2026-04-22T12:00:00.000Z');
@@ -23,34 +33,34 @@ function signedRequest(body: string, ts?: string): Request {
 
 describe('createSlackSlashHandler', () => {
   let mockReport: Report;
-  let builder: { build: ReturnType<typeof vi.fn> };
+  let builder: { build: BuildMock };
   let publisher: { formatInline: ReturnType<typeof vi.fn> };
   let now: () => Date;
 
   beforeEach(() => {
     mockReport = { window: { start: '', end: '' } } as unknown as Report;
-    builder = { build: vi.fn().mockReturnValue(mockReport) };
+    builder = { build: vi.fn().mockReturnValue(mockReport) as unknown as BuildMock };
     publisher = { formatInline: vi.fn().mockReturnValue({ response_type: 'ephemeral', blocks: [] }) };
     now = () => FIXED_NOW;
   });
 
   describe('signature verification', () => {
     it('rejects requests with missing signature with 401', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const req = new Request('http://test/slack/commands/stats', { method: 'POST', body: 'text=week' });
       const res = await handler(req);
       expect(res.status).toBe(401);
     });
 
     it('rejects requests with stale timestamp (>5 min) with 401', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const stale = String(Math.floor(FIXED_NOW.getTime() / 1000) - 600);
       const res = await handler(signedRequest('text=week', stale));
       expect(res.status).toBe(401);
     });
 
     it('rejects requests with bad signature with 401', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const ts = String(Math.floor(FIXED_NOW.getTime() / 1000));
       const req = new Request('http://test/slack/commands/stats', {
         method: 'POST',
@@ -67,7 +77,7 @@ describe('createSlackSlashHandler', () => {
 
   describe('window parsing', () => {
     it('parses "week" as last 7 days, midnight-aligned', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const res = await handler(signedRequest('text=week'));
       expect(res.status).toBe(200);
       expect(builder.build).toHaveBeenCalledOnce();
@@ -78,7 +88,7 @@ describe('createSlackSlashHandler', () => {
     });
 
     it('parses "today" as today_midnight to tomorrow_midnight UTC', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       await handler(signedRequest('text=today'));
       const arg = builder.build.mock.calls[0][0];
       expect(arg.window.start).toBe('2026-04-22T00:00:00.000Z');
@@ -86,7 +96,7 @@ describe('createSlackSlashHandler', () => {
     });
 
     it('parses "month" as last 30 days, midnight-aligned', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       await handler(signedRequest('text=month'));
       const arg = builder.build.mock.calls[0][0];
       expect(arg.window.end).toBe('2026-04-22T00:00:00.000Z');
@@ -94,7 +104,7 @@ describe('createSlackSlashHandler', () => {
     });
 
     it('parses "wtd" as current ISO Monday midnight UTC to today midnight', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       // 2026-04-22 is a Wednesday. ISO Monday of that week is 2026-04-20.
       await handler(signedRequest('text=wtd'));
       const arg = builder.build.mock.calls[0][0];
@@ -103,14 +113,14 @@ describe('createSlackSlashHandler', () => {
     });
 
     it('defaults empty text to last 7 days', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       await handler(signedRequest('text='));
       const arg = builder.build.mock.calls[0][0];
       expect(arg.window.start).toBe('2026-04-15T00:00:00.000Z');
     });
 
     it('returns 200 with friendly error for unknown text', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const res = await handler(signedRequest('text=banana'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { response_type: string; text: string };
@@ -122,20 +132,20 @@ describe('createSlackSlashHandler', () => {
 
   describe('builder + publisher integration', () => {
     it('passes the report through formatInline and returns the result as JSON', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       publisher.formatInline.mockReturnValue({ response_type: 'ephemeral', blocks: [{ type: 'section', text: { type: 'mrkdwn', text: 'TEST_BLOCK' } }] });
 
       const res = await handler(signedRequest('text=week'));
 
       expect(res.status).toBe(200);
       const body = (await res.json()) as { blocks: Array<{ text: { text: string } }> };
-      expect(body.blocks[0].text.text).toBe('TEST_BLOCK');
+      expect(body.blocks[0]?.text.text).toBe('TEST_BLOCK');
       expect(publisher.formatInline).toHaveBeenCalledWith(mockReport);
     });
 
     it('returns 200 with friendly error if builder throws', async () => {
       builder.build.mockImplementation(() => { throw new Error('disk full'); });
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const res = await handler(signedRequest('text=week'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { response_type: string; text: string };
@@ -146,7 +156,7 @@ describe('createSlackSlashHandler', () => {
 
   describe('body size cap', () => {
     it('rejects bodies larger than 64KB with 413 (before signature check)', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const ts = String(Math.floor(FIXED_NOW.getTime() / 1000));
       const req = new Request('http://test/slack/commands/stats', {
         method: 'POST',
@@ -164,7 +174,7 @@ describe('createSlackSlashHandler', () => {
 
   describe('timestamp validation', () => {
     it('rejects future-timestamps more than 5 min ahead with 401', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const future = String(Math.floor(FIXED_NOW.getTime() / 1000) + 600);
       const res = await handler(signedRequest('text=week', future));
       expect(res.status).toBe(401);
@@ -176,7 +186,7 @@ describe('createSlackSlashHandler', () => {
       // 2026-04-26 is a Sunday
       const sunday = new Date('2026-04-26T12:00:00.000Z');
       const handler = createSlackSlashHandler({
-        signingSecret: SECRET, builder: builder as any, publisher: publisher as any,
+        signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher,
         now: () => sunday,
       });
 
@@ -203,7 +213,7 @@ describe('createSlackSlashHandler', () => {
     it('parses "wtd" on Monday as today midnight to today midnight (single-day window)', async () => {
       const monday = new Date('2026-04-20T12:00:00.000Z');  // confirmed Monday
       const handler = createSlackSlashHandler({
-        signingSecret: SECRET, builder: builder as any, publisher: publisher as any,
+        signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher,
         now: () => monday,
       });
 
@@ -230,7 +240,7 @@ describe('createSlackSlashHandler', () => {
 
   describe('help and missing text', () => {
     it('handles "help" with the same message as an unknown arg', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       const res = await handler(signedRequest('text=help'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { response_type: string; text: string };
@@ -239,7 +249,7 @@ describe('createSlackSlashHandler', () => {
     });
 
     it('handles missing text field by defaulting to week', async () => {
-      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as any, publisher: publisher as any, now });
+      const handler = createSlackSlashHandler({ signingSecret: SECRET, builder: builder as unknown as DigestBuilder, publisher: publisher as unknown as SlackPublisher, now });
       await handler(signedRequest('command=/tack-stats'));  // no text param
       const arg = builder.build.mock.calls[0][0];
       expect(arg.window.start).toBe('2026-04-15T00:00:00.000Z');

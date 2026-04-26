@@ -330,8 +330,10 @@ describe('x402 txHash decoding', () => {
       headers['X-Payment-Response'];
 
     expect(headerValue).toBeDefined();
-    const decoded = JSON.parse(Buffer.from(headerValue!, 'base64').toString('utf8'));
-    expect(decoded.transaction).toBe('0xabc123');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const parsed = JSON.parse(Buffer.from(headerValue ?? '', 'base64').toString('utf8'));
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(parsed.transaction).toBe('0xabc123');
   });
 
   it('middleware txHash is undefined when x-payment-response header is absent (mock facilitator)', async () => {
@@ -344,7 +346,7 @@ describe('x402 txHash decoding', () => {
     const app = new Hono();
     app.use(async (c, next) => {
       await next();
-      capturedPaymentResult = (c as any).get('paymentResult');
+      capturedPaymentResult = (c as unknown as { get: (key: string) => unknown }).get('paymentResult');
     });
     app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
     app.post('/pins', (c) => c.json({ ok: true }));
@@ -599,7 +601,7 @@ describe('x402 middleware', () => {
     // Outermost: reads paymentResult after the full middleware chain settles.
     app.use(async (c, next) => {
       await next();
-      capturedPaymentResult = (c as any).get('paymentResult');
+      capturedPaymentResult = (c as unknown as { get: (key: string) => unknown }).get('paymentResult');
     });
     app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
     app.post('/pins', (c) => c.json({ ok: true }));
@@ -696,7 +698,7 @@ describe('x402 middleware', () => {
     // Outermost: reads paymentResult after the full middleware chain settles.
     app.use(async (c, next) => {
       await next();
-      capturedPaymentResult = (c as any).get('paymentResult');
+      capturedPaymentResult = (c as unknown as { get: (key: string) => unknown }).get('paymentResult');
     });
     app.use(
       createX402PaymentMiddleware(testConfig, mockFacilitator, {

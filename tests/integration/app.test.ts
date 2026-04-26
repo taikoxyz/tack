@@ -1578,7 +1578,8 @@ describe('API integration', () => {
       // pinRequestId must be the actual pin requestid created by POST /pins (T13).
       const createdPin = await paidRes.clone().json() as { requestid: string };
       expect(recordedCtx).toMatchObject({
-        requestId: expect.any(String),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        requestId: expect.any(String), // expect.any() returns AsymmetricMatcher typed as any
         pinRequestId: createdPin.requestid,
       });
     });
