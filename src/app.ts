@@ -353,6 +353,10 @@ function statusFromError(error: unknown): number {
   return 500;
 }
 
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export type { AgentCardConfig, AgentCardX402Chain } from './types';
 
 export interface AppServices {
@@ -437,7 +441,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
       // Reporting: counters + payment recording. Pure side effects; never throw.
       const status = c.res.status;
-      const day = new Date().toISOString().slice(0, 10);
+      const day = utcDay();
 
       if (services.metricsRepository) {
         try {
@@ -461,11 +465,15 @@ export function createApp(services: AppServices): Hono<AppEnv> {
           }
         }
         if (services.paymentRecorder) {
-          const pinRequestId = c.get('pinRequestIdForReporting' as never) as string | undefined;
-          services.paymentRecorder.record(paymentResult, {
-            requestId,
-            pinRequestId,
-          });
+          try {
+            const pinRequestId = c.get('pinRequestIdForReporting' as never) as string | undefined;
+            services.paymentRecorder.record(paymentResult, {
+              requestId,
+              pinRequestId,
+            });
+          } catch (err) {
+            logger.error({ err, requestId }, 'payment recorder threw unexpectedly');
+          }
         }
       }
 
@@ -479,7 +487,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       }, 'request handled');
     } catch (error) {
       const errorStatus = statusFromError(error);
-      const day = new Date().toISOString().slice(0, 10);
+      const day = utcDay();
 
       if (services.metricsRepository) {
         try {

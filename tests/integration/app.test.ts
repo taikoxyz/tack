@@ -1573,6 +1573,38 @@ describe('API integration', () => {
       expect(summary.rejected_402).toBe(1);
       expect(summary.paid).toBe(1);
       expect(recordSpy).toHaveBeenCalledOnce();
+      const [recordedResult, recordedCtx] = recordSpy.mock.calls[0];
+      expect(recordedResult).toMatchObject({ wallet: walletA, protocol: 'x402' });
+      expect(recordedCtx).toMatchObject({
+        requestId: expect.any(String),
+        // pinRequestId is undefined for now (T13 sets it).
+        // Once T13 lands, this test should be updated to expect the actual value.
+        pinRequestId: undefined,
+      });
+    });
+
+    it('increments total counter when handler throws (catch-branch coverage)', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const reportingApp = buildApp({ metricsRepository });
+
+      // POST /pins with malformed JSON body — the JSON parser throws a
+      // ValidationError-equivalent server-side, exercising the catch branch
+      // of the reporting middleware. The counter must still increment.
+      await reportingApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: 'not-json{{{',
+        })
+      );
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBeGreaterThanOrEqual(1);
     });
 
     it('does not increment paid or call paymentRecorder when paymentResult is absent', async () => {
