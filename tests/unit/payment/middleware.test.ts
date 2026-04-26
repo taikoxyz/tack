@@ -231,7 +231,7 @@ describe('createMppPaymentMiddleware', () => {
     const app = new Hono<Env>();
     const middleware = createMppPaymentMiddleware({
       mppx: mockMppx,
-      requirementFn: () => ({ amount: '2000000', recipient: '0x1234567890123456789012345678901234567890' }),
+      requirementFn: () => ({ amount: '2', recipient: '0x1234567890123456789012345678901234567890' }),
       resolveVerifiedPayer,
       chainContext: testChainContext,
     });
@@ -254,7 +254,7 @@ describe('createMppPaymentMiddleware', () => {
     expect(body.chainId).toBe(4217);
     expect(body.assetAddress).toBe('0xtoken');
     expect(body.assetDecimals).toBe(6);
-    expect(body.amountAtomic).toBe('2000000');
+    expect(body.amountAtomic).toBe('2000000');  // 2 USD * 10^6 = 2000000 atomic
     expect(body.amountUsd).toBeCloseTo(2.0);
     expect(body.endpoint).toBe('pin');
   });
@@ -270,7 +270,7 @@ describe('createMppPaymentMiddleware', () => {
     const app = new Hono<Env>();
     const middleware = createMppPaymentMiddleware({
       mppx: mockMppx,
-      requirementFn: () => ({ amount: '500000' }),
+      requirementFn: () => ({ amount: '0.5' }),
       resolveVerifiedPayer,
       chainContext: testChainContext,
     });

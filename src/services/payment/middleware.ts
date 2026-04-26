@@ -111,6 +111,14 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
       return payerResolutionFailedResponse();
     }
 
+    // requirement.amount is a decimal USD string (e.g. "0.001"). Convert
+    // to atomic units using the configured asset decimals so the column
+    // holds atomic-integer strings consistently across protocols.
+    const usdAmount = Number(requirement.amount);
+    const atomicAmount = Number.isFinite(usdAmount)
+      ? String(Math.round(usdAmount * 10 ** chainContext.assetDecimals))
+      : '0';
+
     c.set('paymentResult' as any, {
       wallet,
       protocol: 'mpp',
@@ -118,8 +126,8 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
       chainId: chainContext.chainId,
       assetAddress: chainContext.assetAddress,
       assetDecimals: chainContext.assetDecimals,
-      amountAtomic: requirement.amount,
-      amountUsd: chainContext.atomicToUsd(requirement.amount),
+      amountAtomic: atomicAmount,
+      amountUsd: Number.isFinite(usdAmount) ? usdAmount : 0,
       endpoint: chainContext.endpointFor(c.req.path),
     } satisfies PaymentResult);
 

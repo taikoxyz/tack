@@ -1682,8 +1682,8 @@ describe('API integration', () => {
       expect(Number(row.amount_atomic)).toBeGreaterThan(0);
       // pin_request_id must link back to the created pin (T13 requirement).
       expect(row.pin_request_id).toBe(createdPin.requestid);
-      // request_id is a per-request UUID — just validate it's present.
-      expect(row.request_id).toBeTruthy();
+      // request_id must thread through from the X-Request-Id response header.
+      expect(row.request_id).toBe(paidRes.headers.get('X-Request-Id'));
 
       // Verify via the repository's typed API as well.
       const record = paymentRepository.findById(row.id);
@@ -1785,6 +1785,7 @@ describe('API integration', () => {
           protocol: string;
           payer_wallet: string;
           amount_atomic: string;
+          amount_usd: number;
           endpoint: string;
           pin_request_id: string | null;
         }>;
@@ -1794,22 +1795,25 @@ describe('API integration', () => {
       expect(row.protocol).toBe('mpp');
       expect(row.payer_wallet).toBe(MPP_WALLET.toLowerCase());
       expect(row.endpoint).toBe('pin');
-      expect(row.amount_atomic).toBe('0.001');
+      // 0.001 USD * 10^6 = 1000 atomic units (USDC.e has 6 decimals).
+      expect(row.amount_atomic).toBe('1000');
+      expect(row.amount_usd).toBe(0.001);
       expect(row.pin_request_id).toBe(createdPin.requestid);
 
       // Verify via typed repository API.
       const record = paymentRepository.findById(row.id);
       expect(record).not.toBeNull();
       expect(record!.protocol).toBe('mpp');
-      // Tempo chain id is 4217 (mainnet=false → moderato/testnet in the test harness uses 4217).
-      expect(typeof record!.chain_id).toBe('number');
+      // createMppChainContext(false) selects Tempo mainnet; chain_id is 4217.
+      expect(record!.chain_id).toBe(4217);
       expect(record!.asset_decimals).toBe(6);
 
       // metricsRepository must show paid=1, total=1 (single request; MPP skips the 402 probe).
       const day = new Date().toISOString().slice(0, 10);
-      const summary = metricsRepository.summarizeWindow({ startDay: day, endDayExclusive: day + 'z' });
-      expect(summary.paid).toBe(1);
-      expect(summary.total).toBe(1);
+      const metricsSummary = metricsRepository.summarizeWindow({ startDay: day, endDayExclusive: day + 'z' });
+      expect(metricsSummary.paid).toBe(1);
+      expect(metricsSummary.total).toBe(1);
+      expect(metricsSummary.rejected_402).toBe(0);
     });
 
     it('counter buckets tick correctly across free, unpaid-402, and paid requests', async () => {
