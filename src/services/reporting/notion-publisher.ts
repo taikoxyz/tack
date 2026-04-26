@@ -50,6 +50,13 @@ export function isoWeekKey(date: Date): string {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
+/**
+ * Maps a Report into Notion property values. The property keys
+ * (`Week`, `Window Start`, etc.) MUST match the operator-configured
+ * Notion DB schema exactly. Any change here MUST also update the
+ * Notion schema documentation in .env.example, otherwise operators
+ * will silently get validation_error 400s on the next digest fire.
+ */
 function buildProperties(report: Report): Record<string, unknown> {
   const weekKey = isoWeekKey(new Date(report.window.start));
   return {

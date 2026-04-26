@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import { validate as validateCronExpression } from 'node-cron';
 
 export interface AppConfig {
   port: number;
@@ -140,6 +140,14 @@ function isPlaceholderEvmAddress(value: string): boolean {
 }
 
 function validateReportingConfig(config: AppConfig): void {
+  // Cron expression is validated whenever it's non-default OR digest is enabled
+  // — catch typos at boot rather than at the first scheduled fire.
+  if (!validateCronExpression(config.weeklyDigestCron)) {
+    throw new Error(
+      `Invalid configuration: WEEKLY_DIGEST_CRON is not a valid cron expression: ${JSON.stringify(config.weeklyDigestCron)}`
+    );
+  }
+
   if (config.weeklyDigestEnabled) {
     if (!config.slackWebhookUrl) {
       throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires SLACK_WEBHOOK_URL');
@@ -150,12 +158,17 @@ function validateReportingConfig(config: AppConfig): void {
     if (!config.notionDatabaseId) {
       throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires NOTION_DATABASE_ID');
     }
-    if (!cron.validate(config.weeklyDigestCron)) {
-      throw new Error(`Invalid configuration: WEEKLY_DIGEST_CRON is not a valid cron expression: ${JSON.stringify(config.weeklyDigestCron)}`);
-    }
   }
   if (config.slackSlashCommandEnabled && !config.slackSigningSecret) {
     throw new Error('Invalid configuration: SLACK_SLASH_COMMAND_ENABLED=true requires SLACK_SIGNING_SECRET');
+  }
+
+  if (config.slackWebhookUrl) {
+    try {
+      new URL(config.slackWebhookUrl);
+    } catch {
+      throw new Error('Invalid configuration: SLACK_WEBHOOK_URL must be a valid URL');
+    }
   }
 }
 

@@ -334,4 +334,21 @@ describe('reporting config', () => {
     delete process.env.NOTION_DATABASE_ID;
     expect(() => getConfig()).not.toThrow();
   });
+
+  it('rejects an invalid WEEKLY_DIGEST_CRON even when digest is disabled', () => {
+    process.env.WEEKLY_DIGEST_ENABLED = 'false';
+    process.env.WEEKLY_DIGEST_CRON = 'not a cron';
+    expect(() => getConfig()).toThrow(/WEEKLY_DIGEST_CRON/);
+  });
+
+  it('rejects a malformed SLACK_WEBHOOK_URL', () => {
+    process.env.SLACK_WEBHOOK_URL = 'not-a-url';
+    expect(() => getConfig()).toThrow(/SLACK_WEBHOOK_URL must be a valid URL/);
+  });
+
+  it('accepts SLACK_WEBHOOK_URL on a corporate-proxy host', () => {
+    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack-corp.example.com/services/abc';
+    // No throw expected
+    expect(() => getConfig()).not.toThrow();
+  });
 });
