@@ -27,7 +27,7 @@ import {
 } from './services/x402';
 import { formatPinningPriceFormula } from './services/payment/pricing';
 import type { AgentCardConfig, PinStatusValue } from './types';
-import { landingPageHtml } from './landing';
+import { faviconSvg, landingPageHtml } from './landing';
 import { buildOpenApiDocument } from './openapi';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
@@ -405,6 +405,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
   app.get('/', (c) => {
     return c.html(landingPageHtml());
+  });
+
+  app.get('/favicon.svg', (c) => {
+    return c.body(faviconSvg, 200, {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400'
+    });
   });
 
   app.use('*', async (c, next) => {
