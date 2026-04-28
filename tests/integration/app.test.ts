@@ -540,7 +540,7 @@ describe('API integration', () => {
     const landing = await app.request('http://localhost/');
     expect(landing.status).toBe(200);
     const landingHtml = await landing.text();
-    expect(landingHtml).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml" />');
+    expect(landingHtml).toContain('<link rel="icon" href="/favicon.svg?v=wordmark" type="image/svg+xml" />');
     expect(landingHtml.match(/rel="icon"/g)).toHaveLength(1);
 
     const favicon = await app.request('http://localhost/favicon.svg');
