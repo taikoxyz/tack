@@ -2,7 +2,7 @@
 
 **Pin to IPFS. Pay with your wallet. No account needed.**
 
-Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
+Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No pinning API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
 
 Built for AI agents, developer tooling, and any machine that needs to store data on IPFS without a human creating an account first.
 
@@ -50,6 +50,11 @@ Implements the [IPFS Pinning Service API](https://ipfs.github.io/pinning-service
 | `POST` | `/pins/:requestid` | Wallet identity | Replace a pin |
 | `DELETE` | `/pins/:requestid` | Wallet identity | Delete a pin |
 | `GET` | `/ipfs/:cid` | None | Retrieve content (supports ETag, Range) |
+| `GET` | `/usage/summary` | Usage API key | Usage + revenue summary |
+| `GET` | `/usage/revenue` | Usage API key | Revenue metrics only |
+| `GET` | `/usage/requests` | Usage API key | Request counters only |
+| `GET` | `/usage/pins` | Usage API key | Pin count and byte metrics only |
+| `GET` | `/usage/wallets` | Usage API key | Paying wallet metrics only |
 | `GET` | `/health` | None | Service health check |
 | `GET` | `/.well-known/agent.json` | None | A2A agent discovery |
 
@@ -60,6 +65,8 @@ Implements the [IPFS Pinning Service API](https://ipfs.github.io/pinning-service
 **Gateway safety**: Tack serves browser-active content types with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` so HTML/SVG/JS payloads are not executed inline from the API origin.
 
 **Retrieval pricing**: `meta.retrievalPrice` is controlled by the first wallet that pins a CID through Tack. Later pins of the same CID cannot redirect premium retrieval payouts.
+
+**Usage API**: operator metrics are exposed through `/usage/*` endpoints and require `USAGE_API_KEY` via `X-API-Key: <key>` or `Authorization: Bearer <key>`. Query windows use UTC days: `?start=2026-04-21&end=2026-04-28`, where `end` is exclusive. If omitted, the window defaults to the last seven UTC days including today.
 
 ## For AI Agents
 

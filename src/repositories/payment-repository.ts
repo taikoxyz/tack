@@ -29,6 +29,10 @@ export interface PaymentSummary {
     x402: { totalUsd: number; count: number };
     mpp: { totalUsd: number; count: number };
   };
+  byEndpoint: {
+    pin: { totalUsd: number; count: number };
+    retrieval: { totalUsd: number; count: number };
+  };
 }
 
 export class PaymentRepository {
@@ -91,6 +95,15 @@ export class PaymentRepository {
       )
       .all(window.start, window.end) as Array<{ protocol: string; n: number; total_usd: number }>;
 
+    const endpointRows = this.db
+      .prepare(
+        `SELECT endpoint, COUNT(*) AS n, COALESCE(SUM(amount_usd), 0) AS total_usd
+         FROM payments
+         WHERE occurred_at >= ? AND occurred_at < ?
+         GROUP BY endpoint`
+      )
+      .all(window.start, window.end) as Array<{ endpoint: string; n: number; total_usd: number }>;
+
     const distinctRow = this.db
       .prepare(
         `SELECT COUNT(DISTINCT payer_wallet) AS n
@@ -107,6 +120,10 @@ export class PaymentRepository {
         x402: { totalUsd: 0, count: 0 },
         mpp: { totalUsd: 0, count: 0 },
       },
+      byEndpoint: {
+        pin: { totalUsd: 0, count: 0 },
+        retrieval: { totalUsd: 0, count: 0 },
+      },
     };
 
     for (const row of groupRows) {
@@ -114,6 +131,12 @@ export class PaymentRepository {
       summary.count += row.n;
       if (row.protocol === 'x402' || row.protocol === 'mpp') {
         summary.byProtocol[row.protocol] = { totalUsd: row.total_usd, count: row.n };
+      }
+    }
+
+    for (const row of endpointRows) {
+      if (row.endpoint === 'pin' || row.endpoint === 'retrieval') {
+        summary.byEndpoint[row.endpoint] = { totalUsd: row.total_usd, count: row.n };
       }
     }
 
@@ -126,9 +149,9 @@ export class PaymentRepository {
    * i.e., no future payment with `occurred_at < window.start` can arrive
    * for a wallet that's currently a "first-time payer" in the window.
    *
-   * The weekly digest job satisfies this by running on a window that has
-   * already ended. Do not call this for an open/in-progress window if
-   * you need idempotent reporting.
+   * This is stable for closed historical windows. For an open/in-progress
+   * window, a late backfill with `occurred_at < window.start` can change
+   * whether a payer is considered first-time.
    */
   firstTimePayers(window: PaymentWindow): string[] {
     const rows = this.db

@@ -221,7 +221,7 @@ describe('createMppPaymentMiddleware', () => {
     expect(await res.json()).toEqual({ free: true });
   });
 
-  it('populates reporting fields on paymentResult after a successful charge', async () => {
+  it('populates usage fields on paymentResult after a successful charge', async () => {
     const withReceipt = vi.fn((res: Response) => res);
     const mockMppx = createMockMppx({ status: 200, withReceipt });
     const verifiedPayer = '0xcccccccccccccccccccccccccccccccccccccccc';

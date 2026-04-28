@@ -65,6 +65,8 @@ describe('PaymentRepository', () => {
     expect(summary.byProtocol.x402.count).toBe(1);
     expect(summary.byProtocol.mpp.totalUsd).toBe(2.5);
     expect(summary.byProtocol.mpp.count).toBe(1);
+    expect(summary.byEndpoint.pin).toEqual({ totalUsd: 4, count: 2 });
+    expect(summary.byEndpoint.retrieval).toEqual({ totalUsd: 0, count: 0 });
     expect(summary.uniquePayers).toBe(2);
   });
 
@@ -109,6 +111,10 @@ describe('PaymentRepository', () => {
       byProtocol: {
         x402: { totalUsd: 0, count: 0 },
         mpp: { totalUsd: 0, count: 0 },
+      },
+      byEndpoint: {
+        pin: { totalUsd: 0, count: 0 },
+        retrieval: { totalUsd: 0, count: 0 },
       },
     });
   });

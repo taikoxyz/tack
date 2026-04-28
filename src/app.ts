@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { Hono, type MiddlewareHandler } from 'hono';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
   GatewayTimeoutError,
@@ -29,6 +29,7 @@ import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromP
 import type { AgentCardConfig, PinStatusValue } from './types';
 import { landingPageHtml } from './landing';
 import { buildOpenApiDocument } from './openapi';
+import type { UsageMetricsService, UsageSummary, UsageWindowInput } from './services/usage/usage-service';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
@@ -163,6 +164,56 @@ function issueWalletAuthToken(
   c.header(WALLET_AUTH_TOKEN_RESPONSE_HEADER, token.token);
   c.header(WALLET_AUTH_TOKEN_EXPIRES_AT_RESPONSE_HEADER, token.expiresAt);
   c.header('Cache-Control', 'no-store');
+}
+
+function extractUsageApiKey(headers: Headers): string | null {
+  const direct = headers.get('x-api-key');
+  if (direct && direct.trim().length > 0) {
+    return direct.trim();
+  }
+
+  const auth = headers.get('authorization');
+  if (!auth) {
+    return null;
+  }
+
+  const match = /^bearer\s+(.+)$/i.exec(auth.trim());
+  return match?.[1]?.trim() || null;
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function hasValidUsageApiKey(headers: Headers, configuredApiKey: string): boolean {
+  const provided = extractUsageApiKey(headers);
+  return Boolean(provided && constantTimeEqual(provided, configuredApiKey));
+}
+
+function usageUnauthorizedResponse(): Response {
+  return Response.json(
+    {
+      error: 'unauthorized',
+      message: 'valid usage API key is required',
+    },
+    {
+      status: 401,
+      headers: { 'Cache-Control': 'no-store' },
+    }
+  );
+}
+
+function parseUsageWindow(searchParams: URLSearchParams): UsageWindowInput {
+  return {
+    startDay: searchParams.get('start') ?? undefined,
+    endDayExclusive: searchParams.get('end') ?? undefined,
+  };
 }
 
 async function parseJsonBody(c: { req: { json: () => Promise<unknown> } }): Promise<unknown> {
@@ -375,9 +426,10 @@ export interface AppServices {
   agentCard?: AgentCardConfig;
   defaultDurationMonths?: number;
   maxDurationMonths?: number;
-  paymentRecorder?: import('./services/reporting/payment-recorder.js').PaymentRecorder;
+  paymentRecorder?: import('./services/usage/payment-recorder.js').PaymentRecorder;
   metricsRepository?: import('./repositories/metrics-repository.js').MetricsRepository;
-  slackSlashHandler?: (req: Request) => Promise<Response>;
+  usageMetrics?: UsageMetricsService;
+  usageApiKey?: string;
 }
 
 interface AppEnv {
@@ -393,7 +445,7 @@ interface AppEnv {
     walletAddress: string | null;
     walletAuthError: string | null;
     paymentResult?: import('./services/payment/types.js').PaymentResult;
-    pinRequestIdForReporting?: string;
+    pinRequestIdForUsage?: string;
   };
 }
 
@@ -441,7 +493,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
       await next();
 
-      // Reporting: counters + payment recording. Pure side effects; never throw.
+      // Usage metrics: counters + payment recording. Pure side effects; never throw.
       const status = c.res.status;
       const day = utcDay();
 
@@ -468,7 +520,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
         }
         if (services.paymentRecorder) {
           try {
-            const pinRequestId = c.get('pinRequestIdForReporting');
+            const pinRequestId = c.get('pinRequestIdForUsage');
             services.paymentRecorder.record(paymentResult, {
               requestId,
               pinRequestId,
@@ -543,11 +595,59 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     return c.json(document, 200, { 'Cache-Control': 'public, max-age=3600' });
   });
 
-  // Slack slash command — only registered when the handler is wired
-  if (services.slackSlashHandler) {
-    app.post('/slack/commands/stats', async (c) => {
-      return services.slackSlashHandler!(c.req.raw);
+  if (services.usageMetrics && services.usageApiKey) {
+    const usagePayload = (c: Context<AppEnv>) => {
+      const summary = services.usageMetrics!.summary(parseUsageWindow(new URL(c.req.url).searchParams));
+      c.header('Cache-Control', 'no-store');
+      return summary;
+    };
+
+    const usageBadRequest = (c: Context<AppEnv>, err: unknown) => c.json(
+      {
+        error: 'bad_request',
+        message: err instanceof Error ? err.message : 'invalid usage window',
+      },
+      400,
+      { 'Cache-Control': 'no-store' }
+    );
+
+    const usageRoute = (select: (summary: UsageSummary) => unknown) => (c: Context<AppEnv>) => {
+      try {
+        return c.json(select(usagePayload(c)));
+      } catch (err) {
+        return usageBadRequest(c, err);
+      }
+    };
+
+    app.use('/usage/*', async (c, next) => {
+      if (!hasValidUsageApiKey(c.req.raw.headers, services.usageApiKey!)) {
+        return usageUnauthorizedResponse();
+      }
+
+      await next();
     });
+
+    app.get('/usage/summary', usageRoute((summary) => summary));
+    app.get('/usage/revenue', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      revenue: summary.revenue,
+    })));
+    app.get('/usage/requests', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      requests: summary.requests,
+    })));
+    app.get('/usage/pins', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      pins: summary.pins,
+    })));
+    app.get('/usage/wallets', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      wallets: summary.wallets,
+    })));
   }
 
   app.get('/llms.txt', (c) => {
@@ -578,7 +678,7 @@ MPP (\`Authorization: Payment\`) is disabled on this deployment. Check GET /.wel
     const text = `\
 # Tack
 
-> IPFS pinning and content retrieval for agents. Pay with USDC on Taiko${mppEnabled ? ' or USDC.e on Tempo' : ''} — no accounts, no API keys.
+> IPFS pinning and content retrieval for agents. Pay with USDC on Taiko${mppEnabled ? ' or USDC.e on Tempo' : ''} — no accounts, no pinning API keys.
 
 ## Overview
 
@@ -618,6 +718,14 @@ ${protocolsBlock}
 - GET /pins/:requestid — Get a specific pin by request ID.
 - POST /pins/:requestid — Replace a pin. Same body as POST /pins.
 - DELETE /pins/:requestid — Delete a pin.
+
+### Usage (operator API key required)
+
+- GET /usage/summary — Revenue, request, pin, and wallet metrics. Query: start=YYYY-MM-DD, end=YYYY-MM-DD (exclusive).
+- GET /usage/revenue — Revenue metrics only.
+- GET /usage/requests — Request counters only.
+- GET /usage/pins — Pin counts and bytes only.
+- GET /usage/wallets — Paying wallet metrics only.
 
 ## Pinning Service API
 
@@ -709,6 +817,10 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
         gateway: {
           endpoint: '/ipfs/:cid',
           supports: ['etag', 'range', 'cache-control', 'optional-paywall']
+        },
+        usage: {
+          endpoints: ['/usage/summary', '/usage/revenue', '/usage/requests', '/usage/pins', '/usage/wallets'],
+          auth: 'USAGE_API_KEY via X-API-Key or Authorization: Bearer'
         }
       },
       payments: {
@@ -793,7 +905,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       durationMonths,
       sizeBytes
     });
-    c.set('pinRequestIdForReporting', result.requestid);
+    c.set('pinRequestIdForUsage', result.requestid);
     return c.json(toPinStatusResponse(result), 202);
   });
 
@@ -834,7 +946,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     const body = parsePinPayload(await parseJsonBody(c));
     const wallet = requireOwnerWallet(c);
     const record = await services.pinningService.replacePin(c.req.param('requestid'), body, wallet);
-    c.set('pinRequestIdForReporting', record.requestid);
+    c.set('pinRequestIdForUsage', record.requestid);
     return c.json(toPinStatusResponse(record), 202);
   });
 

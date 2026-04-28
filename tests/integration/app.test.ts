@@ -7,9 +7,12 @@ import { createApp } from '../../src/app';
 import { createDb } from '../../src/db';
 import { GatewayTimeoutError, UpstreamServiceError } from '../../src/lib/errors';
 import { PinRepository } from '../../src/repositories/pin-repository';
+import { MetricsRepository } from '../../src/repositories/metrics-repository';
+import { PaymentRepository } from '../../src/repositories/payment-repository';
 import type { IpfsClient } from '../../src/services/ipfs-rpc-client';
 import { GatewayContentCache } from '../../src/services/content-cache';
 import { PinningService } from '../../src/services/pinning-service';
+import { UsageMetricsService } from '../../src/services/usage/usage-service';
 import { InMemoryRateLimiter } from '../../src/services/rate-limiter';
 import {
   createX402PaymentMiddleware,
@@ -1500,13 +1503,13 @@ describe('API integration', () => {
     });
   });
 
-  describe('reporting middleware (T12)', () => {
+  describe('usage metrics recording middleware', () => {
     it('increments total on every request', async () => {
       const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
       const metricsRepository = new MetricsRepository(db);
-      const reportingApp = buildApp({ metricsRepository });
+      const metricsApp = buildApp({ metricsRepository });
 
-      await reportingApp.request(new Request('http://localhost/health'));
+      await metricsApp.request(new Request('http://localhost/health'));
 
       const day = new Date().toISOString().slice(0, 10);
       const summary = metricsRepository.summarizeWindow({
@@ -1521,10 +1524,10 @@ describe('API integration', () => {
     it('increments rejected_402 on 402 responses', async () => {
       const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
       const metricsRepository = new MetricsRepository(db);
-      const reportingApp = buildApp({ metricsRepository });
+      const metricsApp = buildApp({ metricsRepository });
 
       // Unpaid POST /pins → 402
-      const res = await reportingApp.request(
+      const res = await metricsApp.request(
         new Request('http://localhost/pins', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1545,7 +1548,7 @@ describe('API integration', () => {
 
     it('increments paid and calls paymentRecorder.record on 2xx with paymentResult', async () => {
       const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
-      const { PaymentRecorder } = await import('../../src/services/reporting/payment-recorder');
+      const { PaymentRecorder } = await import('../../src/services/usage/payment-recorder');
       const { PaymentRepository } = await import('../../src/repositories/payment-repository');
 
       const metricsRepository = new MetricsRepository(db);
@@ -1553,10 +1556,10 @@ describe('API integration', () => {
       const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
       const recordSpy = vi.spyOn(paymentRecorder, 'record');
 
-      const reportingApp = buildApp({ metricsRepository, paymentRecorder });
+      const metricsApp = buildApp({ metricsRepository, paymentRecorder });
 
       // Full paid request: goes 402 first, then paid
-      const paidRes = await paidRequest(reportingApp, 'http://localhost/pins', walletA, () => ({
+      const paidRes = await paidRequest(metricsApp, 'http://localhost/pins', walletA, () => ({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ cid: 'bafy-paid-report' })
@@ -1587,12 +1590,12 @@ describe('API integration', () => {
     it('increments total counter when handler throws (catch-branch coverage)', async () => {
       const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
       const metricsRepository = new MetricsRepository(db);
-      const reportingApp = buildApp({ metricsRepository });
+      const metricsApp = buildApp({ metricsRepository });
 
       // POST /pins with malformed JSON body — the JSON parser throws a
       // ValidationError-equivalent server-side, exercising the catch branch
-      // of the reporting middleware. The counter must still increment.
-      await reportingApp.request(
+      // of the metrics recording middleware. The counter must still increment.
+      await metricsApp.request(
         new Request('http://localhost/pins', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1613,10 +1616,10 @@ describe('API integration', () => {
       const metricsRepository = new MetricsRepository(db);
       const paymentRecorder = { record: vi.fn() };
 
-      const reportingApp = buildApp({ metricsRepository, paymentRecorder: paymentRecorder as never });
+      const metricsApp = buildApp({ metricsRepository, paymentRecorder: paymentRecorder as never });
 
       // GET /health — no payment, returns 200
-      await reportingApp.request(new Request('http://localhost/health'));
+      await metricsApp.request(new Request('http://localhost/health'));
 
       const day = new Date().toISOString().slice(0, 10);
       const summary = metricsRepository.summarizeWindow({
@@ -1629,29 +1632,29 @@ describe('API integration', () => {
     });
   });
 
-  describe('reporting integration (T21): end-to-end recording', () => {
+  describe('usage metrics recording integration', () => {
     // Shared helpers — all tests in this block use a real PaymentRepository and
     // a real PaymentRecorder so we can assert on the actual DB rows rather than
     // spy calls.
 
-    async function buildReportingHarness(overrides?: Partial<Parameters<typeof createApp>[0]>) {
+    async function buildUsageHarness(overrides?: Partial<Parameters<typeof createApp>[0]>) {
       const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
-      const { PaymentRecorder } = await import('../../src/services/reporting/payment-recorder');
+      const { PaymentRecorder } = await import('../../src/services/usage/payment-recorder');
       const { PaymentRepository } = await import('../../src/repositories/payment-repository');
 
       const metricsRepository = new MetricsRepository(db);
       const paymentRepository = new PaymentRepository(db);
       const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
 
-      const reportingApp = buildApp({ metricsRepository, paymentRecorder, ...overrides });
+      const metricsApp = buildApp({ metricsRepository, paymentRecorder, ...overrides });
 
-      return { metricsRepository, paymentRepository, paymentRecorder, reportingApp };
+      return { metricsRepository, paymentRepository, paymentRecorder, metricsApp };
     }
 
     it('x402 paid POST /pins lands a payments row with correct fields', async () => {
-      const { paymentRepository, reportingApp } = await buildReportingHarness();
+      const { paymentRepository, metricsApp } = await buildUsageHarness();
 
-      const paidRes = await paidRequest(reportingApp, 'http://localhost/pins', walletA, () => ({
+      const paidRes = await paidRequest(metricsApp, 'http://localhost/pins', walletA, () => ({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ cid: 'bafy-t21-x402' })
@@ -1697,7 +1700,7 @@ describe('API integration', () => {
 
     it('MPP paid POST /pins lands a payments row with protocol=mpp', async () => {
       const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
-      const { PaymentRecorder } = await import('../../src/services/reporting/payment-recorder');
+      const { PaymentRecorder } = await import('../../src/services/usage/payment-recorder');
       const { PaymentRepository } = await import('../../src/repositories/payment-repository');
 
       const metricsRepository = new MetricsRepository(db);
@@ -1818,14 +1821,14 @@ describe('API integration', () => {
     });
 
     it('counter buckets tick correctly across free, unpaid-402, and paid requests', async () => {
-      const { metricsRepository, reportingApp } = await buildReportingHarness();
+      const { metricsRepository, metricsApp } = await buildUsageHarness();
 
       // 1. Free request — GET /health → 200, no payment.
-      const freeRes = await reportingApp.request(new Request('http://localhost/health'));
+      const freeRes = await metricsApp.request(new Request('http://localhost/health'));
       expect(freeRes.status).toBe(200);
 
       // 2. Unpaid POST /pins → 402.
-      const unpaidRes = await reportingApp.request(
+      const unpaidRes = await metricsApp.request(
         new Request('http://localhost/pins', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1835,7 +1838,7 @@ describe('API integration', () => {
       expect(unpaidRes.status).toBe(402);
 
       // 3. Paid POST /pins → 202.
-      const paidRes = await paidRequest(reportingApp, 'http://localhost/pins', walletA, () => ({
+      const paidRes = await paidRequest(metricsApp, 'http://localhost/pins', walletA, () => ({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ cid: 'bafy-t21-counter-paid' })
@@ -1856,30 +1859,141 @@ describe('API integration', () => {
     });
   });
 
-  describe('Slack slash command (T20 wiring)', () => {
-    it('delegates to the handler and returns its response when handler is wired', async () => {
-      const stubHandler = vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 }));
-      const slashApp = buildApp({ slackSlashHandler: stubHandler });
-
-      const res = await slashApp.request('/slack/commands/stats', {
-        method: 'POST',
-        body: 'text=week',
+  describe('usage metrics API', () => {
+    it('requires the configured API key', async () => {
+      const usageMetrics = new UsageMetricsService({
+        payments: new PaymentRepository(db),
+        metrics: new MetricsRepository(db),
+        pins: new PinRepository(db),
+      });
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKey: '0123456789abcdef0123456789abcdef',
       });
 
+      const res = await usageApp.request('/usage/summary');
       expect(res.status).toBe(401);
-      expect(stubHandler).toHaveBeenCalledOnce();
+      expect(await res.json()).toEqual({
+        error: 'unauthorized',
+        message: 'valid usage API key is required',
+      });
     });
 
-    it('returns 404 for /slack/commands/stats when handler is not wired', async () => {
-      // buildApp() with no slackSlashHandler — route must not be registered
-      const noSlashApp = buildApp();
-
-      const res = await noSlashApp.request('/slack/commands/stats', {
-        method: 'POST',
-        body: 'text=week',
+    it('returns a structured usage and revenue summary for API-key clients', async () => {
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const pinRepository = new PinRepository(db);
+      const usageMetrics = new UsageMetricsService(
+        { payments: paymentRepository, metrics: metricsRepository, pins: pinRepository },
+        () => new Date('2026-04-28T15:30:00.000Z')
+      );
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKey: '0123456789abcdef0123456789abcdef',
       });
 
-      expect(res.status).toBe(404);
+      paymentRepository.insert({
+        id: 'pay_1',
+        occurred_at: '2026-04-21T12:00:00.000Z',
+        protocol: 'x402',
+        chain_id: 167000,
+        payer_wallet: walletA,
+        asset_address: taikoChain.usdcAssetAddress,
+        asset_decimals: 6,
+        amount_atomic: '1500',
+        amount_usd: 0.0015,
+        endpoint: 'pin',
+        request_id: 'req_1',
+        tx_hash: null,
+        pin_request_id: 'pin_1',
+      });
+      metricsRepository.increment('2026-04-21', 'total');
+      metricsRepository.increment('2026-04-21', 'paid');
+      pinRepository.create({
+        requestid: 'pin_1',
+        cid: 'bafy-usage-api',
+        name: null,
+        status: 'pinned',
+        origins: [],
+        meta: {},
+        delegates: [],
+        info: {},
+        owner: walletA,
+        created: '2026-04-21T00:00:00.000Z',
+        updated: '2026-04-21T00:00:00.000Z',
+        expires_at: null,
+        size_bytes: 4096,
+      });
+
+      const res = await usageApp.request('/usage/summary?start=2026-04-21&end=2026-04-22', {
+        headers: { 'x-api-key': '0123456789abcdef0123456789abcdef' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      const body = await res.json() as {
+        window: { startDay: string; endDayExclusive: string };
+        revenue: { totalUsd: number; paymentCount: number; byEndpoint: { pin: { count: number } } };
+        requests: { total: number; paid: number; free: number };
+        pins: { created: { count: number; totalBytes: number } };
+        wallets: { payersInWindow: number };
+      };
+
+      expect(body.window).toMatchObject({ startDay: '2026-04-21', endDayExclusive: '2026-04-22' });
+      expect(body.revenue.totalUsd).toBe(0.0015);
+      expect(body.revenue.paymentCount).toBe(1);
+      expect(body.revenue.byEndpoint.pin.count).toBe(1);
+      expect(body.requests).toMatchObject({ total: 1, paid: 1, free: 0 });
+      expect(body.pins.created).toEqual({ count: 1, totalBytes: 4096 });
+      expect(body.wallets.payersInWindow).toBe(1);
+    });
+
+    it('exposes section endpoints with the same window and auth contract', async () => {
+      const usageMetrics = new UsageMetricsService(
+        {
+          payments: new PaymentRepository(db),
+          metrics: new MetricsRepository(db),
+          pins: new PinRepository(db),
+        },
+        () => new Date('2026-04-28T15:30:00.000Z')
+      );
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKey: '0123456789abcdef0123456789abcdef',
+      });
+
+      const res = await usageApp.request('/usage/revenue?start=2026-04-21&end=2026-04-22', {
+        headers: { authorization: 'Bearer 0123456789abcdef0123456789abcdef' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({
+        window: { startDay: '2026-04-21', endDayExclusive: '2026-04-22' },
+        revenue: { totalUsd: 0, paymentCount: 0 },
+      });
+    });
+
+    it('returns a 400 for invalid usage windows', async () => {
+      const usageMetrics = new UsageMetricsService({
+        payments: new PaymentRepository(db),
+        metrics: new MetricsRepository(db),
+        pins: new PinRepository(db),
+      });
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKey: '0123456789abcdef0123456789abcdef',
+      });
+
+      const res = await usageApp.request('/usage/summary?start=bad&end=2026-04-22', {
+        headers: { 'x-api-key': '0123456789abcdef0123456789abcdef' },
+      });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        error: 'bad_request',
+        message: expect.stringContaining('YYYY-MM-DD') as string,
+      });
     });
   });
+
 });

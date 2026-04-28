@@ -1,5 +1,3 @@
-import { validate as validateCronExpression } from 'node-cron';
-
 export interface AppConfig {
   port: number;
   ipfsApiUrl: string;
@@ -37,13 +35,7 @@ export interface AppConfig {
   mppPayTo: string;
   mppTestnet: boolean;
   mppTempoRpcUrl?: string;
-  weeklyDigestEnabled: boolean;
-  weeklyDigestCron: string;
-  slackWebhookUrl?: string;
-  slackSlashCommandEnabled: boolean;
-  slackSigningSecret?: string;
-  notionApiKey?: string;
-  notionDatabaseId?: string;
+  usageApiKey?: string;
 }
 
 const PLACEHOLDER_EVM_ADDRESSES = new Set([
@@ -51,6 +43,10 @@ const PLACEHOLDER_EVM_ADDRESSES = new Set([
   '0x0000000000000000000000000000000000000001'
 ]);
 const PLACEHOLDER_WALLET_AUTH_SECRETS = new Set([
+  'change-me',
+  'changeme'
+]);
+const PLACEHOLDER_USAGE_API_KEYS = new Set([
   'change-me',
   'changeme'
 ]);
@@ -139,39 +135,6 @@ function isPlaceholderEvmAddress(value: string): boolean {
   return PLACEHOLDER_EVM_ADDRESSES.has(value.trim().toLowerCase());
 }
 
-function validateReportingConfig(config: AppConfig): void {
-  // Cron expression is validated whenever it's non-default OR digest is enabled
-  // — catch typos at boot rather than at the first scheduled fire.
-  if (!validateCronExpression(config.weeklyDigestCron)) {
-    throw new Error(
-      `Invalid configuration: WEEKLY_DIGEST_CRON is not a valid cron expression: ${JSON.stringify(config.weeklyDigestCron)}`
-    );
-  }
-
-  if (config.weeklyDigestEnabled) {
-    if (!config.slackWebhookUrl) {
-      throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires SLACK_WEBHOOK_URL');
-    }
-    if (!config.notionApiKey) {
-      throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires NOTION_API_KEY');
-    }
-    if (!config.notionDatabaseId) {
-      throw new Error('Invalid configuration: WEEKLY_DIGEST_ENABLED=true requires NOTION_DATABASE_ID');
-    }
-  }
-  if (config.slackSlashCommandEnabled && !config.slackSigningSecret) {
-    throw new Error('Invalid configuration: SLACK_SLASH_COMMAND_ENABLED=true requires SLACK_SIGNING_SECRET');
-  }
-
-  if (config.slackWebhookUrl) {
-    try {
-      new URL(config.slackWebhookUrl);
-    } catch {
-      throw new Error('Invalid configuration: SLACK_WEBHOOK_URL must be a valid URL');
-    }
-  }
-}
-
 function validateProductionConfig(config: AppConfig): void {
   if (
     config.pinReplicaDelegateUrls.length > 0 &&
@@ -200,6 +163,14 @@ function validateProductionConfig(config: AppConfig): void {
 
   if (config.walletAuthTokenSecret.trim().length < 32 || PLACEHOLDER_WALLET_AUTH_SECRETS.has(config.walletAuthTokenSecret.trim().toLowerCase())) {
     throw new Error('Invalid production configuration: WALLET_AUTH_TOKEN_SECRET must be a strong random secret');
+  }
+
+  if (!config.usageApiKey) {
+    throw new Error('Invalid production configuration: USAGE_API_KEY is required');
+  }
+
+  if (config.usageApiKey.trim().length < 32 || PLACEHOLDER_USAGE_API_KEYS.has(config.usageApiKey.trim().toLowerCase())) {
+    throw new Error('Invalid production configuration: USAGE_API_KEY must be a strong random secret');
   }
 
   if (isPlaceholderEvmAddress(config.x402TaikoPayTo)) {
@@ -232,6 +203,7 @@ export function getConfig(): AppConfig {
 
   const mppSecretKey = process.env.MPP_SECRET_KEY?.trim() || undefined;
   const mppTempoRpcUrl = process.env.MPP_TEMPO_RPC_URL?.trim() || undefined;
+  const usageApiKey = process.env.USAGE_API_KEY?.trim() || undefined;
 
   const config: AppConfig = {
     port: Number(process.env.PORT ?? 3000),
@@ -282,13 +254,7 @@ export function getConfig(): AppConfig {
     mppPayTo: process.env.MPP_PAY_TO ?? '0x0000000000000000000000000000000000000001',
     mppTestnet: parseBoolean(process.env.MPP_TESTNET, false),
     mppTempoRpcUrl,
-    weeklyDigestEnabled: parseBoolean(process.env.WEEKLY_DIGEST_ENABLED, false),
-    weeklyDigestCron: process.env.WEEKLY_DIGEST_CRON ?? '0 9 * * 1',
-    slackWebhookUrl: process.env.SLACK_WEBHOOK_URL?.trim() || undefined,
-    slackSlashCommandEnabled: parseBoolean(process.env.SLACK_SLASH_COMMAND_ENABLED, false),
-    slackSigningSecret: process.env.SLACK_SIGNING_SECRET?.trim() || undefined,
-    notionApiKey: process.env.NOTION_API_KEY?.trim() || undefined,
-    notionDatabaseId: process.env.NOTION_DATABASE_ID?.trim() || undefined
+    usageApiKey
   };
 
   if (!Number.isInteger(config.walletAuthTokenTtlSeconds) || config.walletAuthTokenTtlSeconds <= 0) {
@@ -299,7 +265,6 @@ export function getConfig(): AppConfig {
     throw new Error('X402_DEFAULT_DURATION_MONTHS must not exceed X402_MAX_DURATION_MONTHS');
   }
 
-  validateReportingConfig(config);
   validateProductionConfig(config);
   return config;
 }

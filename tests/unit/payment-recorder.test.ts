@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb } from '../../src/db';
 import { PaymentRepository } from '../../src/repositories/payment-repository';
 import type { PaymentRecord } from '../../src/repositories/payment-repository';
-import { PaymentRecorder } from '../../src/services/reporting/payment-recorder';
+import { PaymentRecorder } from '../../src/services/usage/payment-recorder';
 import type { PaymentResult } from '../../src/services/payment/types';
 import type { Logger } from 'pino';
 

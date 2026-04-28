@@ -454,7 +454,7 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
               res.headers.set(key, value);
             });
 
-            // Reporting: set paymentResult so PaymentRecorder can write a row.
+            // Usage metrics: set paymentResult so PaymentRecorder can write a row.
             // Wallet: extracted from the EIP-3009 authorization (or permit2 / from)
             // in the payment payload — the canonical signer of the payment.
             const wallet = extractWalletFromPayload(paymentPayload) ?? '';

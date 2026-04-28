@@ -185,6 +185,20 @@ describe('buildOpenApiDocument', () => {
     expect(scheme.name).toBe('Authorization');
   });
 
+  it('documents usage endpoints behind the usageApiKey scheme', () => {
+    const doc = buildOpenApiDocument({ ...baseInput, agentCard: baseAgent });
+    const paths = doc.paths as Record<string, Record<string, Record<string, unknown>>>;
+    expect(paths['/usage/summary'].get.security).toEqual([{ usageApiKey: [] }]);
+    expect(paths['/usage/revenue'].get.parameters).toEqual(paths['/usage/summary'].get.parameters);
+    const components = doc.components as Record<string, Record<string, Record<string, unknown>>>;
+    const scheme = components.securitySchemes.usageApiKey;
+    expect(scheme).toMatchObject({
+      type: 'apiKey',
+      in: 'header',
+      name: 'X-API-Key',
+    });
+  });
+
   it('falls back to a generic guidance line when agentCard is omitted', () => {
     const doc = buildOpenApiDocument(baseInput);
     const guidance = (doc.info as Record<string, unknown>)['x-guidance'] as string;

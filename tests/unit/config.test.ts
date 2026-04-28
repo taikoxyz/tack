@@ -7,6 +7,7 @@ const realBasePayTo = '0x3333333333333333333333333333333333333333';
 const realMppPayTo = '0x4444444444444444444444444444444444444444';
 const realUsdc = '0x2222222222222222222222222222222222222222';
 const placeholderAddress = '0x0000000000000000000000000000000000000001';
+const realUsageApiKey = '0123456789abcdef0123456789abcdef';
 
 function setTestEnv(overrides: Record<string, string>): void {
   process.env = {
@@ -34,7 +35,8 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: 'change-me',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: realUsdc
+      X402_USDC_ASSET_ADDRESS: realUsdc,
+      USAGE_API_KEY: realUsageApiKey
     });
 
     expect(() => getConfig()).toThrow('WALLET_AUTH_TOKEN_SECRET must be a strong random secret');
@@ -46,7 +48,8 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: placeholderAddress,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: realUsdc
+      X402_USDC_ASSET_ADDRESS: realUsdc,
+      USAGE_API_KEY: realUsageApiKey
     });
 
     expect(() => getConfig()).toThrow('X402_TAIKO_PAY_TO must be a real wallet address');
@@ -58,7 +61,8 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: placeholderAddress,
-      X402_USDC_ASSET_ADDRESS: realUsdc
+      X402_USDC_ASSET_ADDRESS: realUsdc,
+      USAGE_API_KEY: realUsageApiKey
     });
 
     expect(() => getConfig()).toThrow('X402_BASE_PAY_TO must be a real wallet address');
@@ -70,7 +74,8 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: placeholderAddress
+      X402_USDC_ASSET_ADDRESS: placeholderAddress,
+      USAGE_API_KEY: realUsageApiKey
     });
 
     expect(() => getConfig()).toThrow('X402_USDC_ASSET_ADDRESS must be a real token address');
@@ -85,7 +90,8 @@ describe('config validation', () => {
       X402_BASE_PAY_TO: realBasePayTo,
       X402_USDC_ASSET_ADDRESS: realUsdc,
       MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef',
-      MPP_PAY_TO: realMppPayTo
+      MPP_PAY_TO: realMppPayTo,
+      USAGE_API_KEY: realUsageApiKey
     });
 
     const config = getConfig();
@@ -94,6 +100,7 @@ describe('config validation', () => {
     expect(config.x402BasePayTo).toBe(realBasePayTo);
     expect(config.x402UsdcAssetAddress).toBe(realUsdc);
     expect(config.mppPayTo).toBe(realMppPayTo);
+    expect(config.usageApiKey).toBe(realUsageApiKey);
     expect(config.walletAuthTokenAudience).toBe('tack-owner-api');
     expect(config.walletAuthTokenIssuer).toBe('tack');
     expect(config.walletAuthTokenTtlSeconds).toBe(900);
@@ -105,7 +112,8 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: realUsdc
+      X402_USDC_ASSET_ADDRESS: realUsdc,
+      USAGE_API_KEY: realUsageApiKey
     });
 
     const config = getConfig();
@@ -120,7 +128,8 @@ describe('config validation', () => {
       X402_BASE_PAY_TO: realBasePayTo,
       X402_USDC_ASSET_ADDRESS: realUsdc,
       MPP_SECRET_KEY: 'tooshort',
-      MPP_PAY_TO: realMppPayTo
+      MPP_PAY_TO: realMppPayTo,
+      USAGE_API_KEY: realUsageApiKey
     });
 
     expect(() => getConfig()).toThrow('MPP_SECRET_KEY must be at least 32 bytes');
@@ -133,7 +142,8 @@ describe('config validation', () => {
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
       X402_USDC_ASSET_ADDRESS: realUsdc,
-      MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef'
+      MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef',
+      USAGE_API_KEY: realUsageApiKey
     });
 
     expect(() => getConfig()).toThrow('MPP_PAY_TO must be a real wallet address when MPP is enabled');
@@ -232,123 +242,44 @@ describe('config validation', () => {
   });
 });
 
-describe('reporting config', () => {
+describe('usage API config', () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
       WALLET_AUTH_TOKEN_SECRET: 'test-wallet-auth-secret'
     };
-    delete process.env.WEEKLY_DIGEST_ENABLED;
-    delete process.env.WEEKLY_DIGEST_CRON;
-    delete process.env.SLACK_WEBHOOK_URL;
-    delete process.env.SLACK_SLASH_COMMAND_ENABLED;
-    delete process.env.SLACK_SIGNING_SECRET;
-    delete process.env.NOTION_API_KEY;
-    delete process.env.NOTION_DATABASE_ID;
+    delete process.env.USAGE_API_KEY;
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
   });
 
-  it('defaults reporting features to disabled', () => {
-    delete process.env.WEEKLY_DIGEST_ENABLED;
-    delete process.env.SLACK_SLASH_COMMAND_ENABLED;
+  it('reads USAGE_API_KEY when configured', () => {
+    process.env.USAGE_API_KEY = '0123456789abcdef0123456789abcdef';
     const cfg = getConfig();
-    expect(cfg.weeklyDigestEnabled).toBe(false);
-    expect(cfg.slackSlashCommandEnabled).toBe(false);
+    expect(cfg.usageApiKey).toBe('0123456789abcdef0123456789abcdef');
   });
 
-  it('reads default WEEKLY_DIGEST_CRON of 0 9 * * 1', () => {
-    delete process.env.WEEKLY_DIGEST_CRON;
-    const cfg = getConfig();
-    expect(cfg.weeklyDigestCron).toBe('0 9 * * 1');
+  it('requires a strong USAGE_API_KEY in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.WALLET_AUTH_TOKEN_SECRET = '0123456789abcdef0123456789abcdef';
+    process.env.X402_TAIKO_PAY_TO = realTaikoPayTo;
+    process.env.X402_BASE_PAY_TO = realBasePayTo;
+    process.env.X402_USDC_ASSET_ADDRESS = realUsdc;
+    delete process.env.USAGE_API_KEY;
+
+    expect(() => getConfig()).toThrow(/USAGE_API_KEY/);
   });
 
-  it('rejects WEEKLY_DIGEST_ENABLED=true without SLACK_WEBHOOK_URL', () => {
-    process.env.WEEKLY_DIGEST_ENABLED = 'true';
-    delete process.env.SLACK_WEBHOOK_URL;
-    process.env.NOTION_API_KEY = 'secret_x';
-    process.env.NOTION_DATABASE_ID = 'db_x';
-    expect(() => getConfig()).toThrow(/SLACK_WEBHOOK_URL/);
-  });
+  it('rejects placeholder USAGE_API_KEY values in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.WALLET_AUTH_TOKEN_SECRET = '0123456789abcdef0123456789abcdef';
+    process.env.X402_TAIKO_PAY_TO = realTaikoPayTo;
+    process.env.X402_BASE_PAY_TO = realBasePayTo;
+    process.env.X402_USDC_ASSET_ADDRESS = realUsdc;
+    process.env.USAGE_API_KEY = 'change-me';
 
-  it('rejects WEEKLY_DIGEST_ENABLED=true without NOTION_API_KEY', () => {
-    process.env.WEEKLY_DIGEST_ENABLED = 'true';
-    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
-    delete process.env.NOTION_API_KEY;
-    process.env.NOTION_DATABASE_ID = 'db_x';
-    expect(() => getConfig()).toThrow(/NOTION_API_KEY/);
-  });
-
-  it('rejects WEEKLY_DIGEST_ENABLED=true without NOTION_DATABASE_ID', () => {
-    process.env.WEEKLY_DIGEST_ENABLED = 'true';
-    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
-    process.env.NOTION_API_KEY = 'secret_x';
-    delete process.env.NOTION_DATABASE_ID;
-    expect(() => getConfig()).toThrow(/NOTION_DATABASE_ID/);
-  });
-
-  it('rejects WEEKLY_DIGEST_ENABLED=true with invalid cron expression', () => {
-    process.env.WEEKLY_DIGEST_ENABLED = 'true';
-    process.env.WEEKLY_DIGEST_CRON = 'not-a-cron';
-    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
-    process.env.NOTION_API_KEY = 'secret_x';
-    process.env.NOTION_DATABASE_ID = 'db_x';
-    expect(() => getConfig()).toThrow(/WEEKLY_DIGEST_CRON/);
-  });
-
-  it('accepts WEEKLY_DIGEST_ENABLED=true with all required env', () => {
-    process.env.WEEKLY_DIGEST_ENABLED = 'true';
-    process.env.WEEKLY_DIGEST_CRON = '0 9 * * 1';
-    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/x';
-    process.env.NOTION_API_KEY = 'secret_x';
-    process.env.NOTION_DATABASE_ID = 'db_x';
-    const cfg = getConfig();
-    expect(cfg.weeklyDigestEnabled).toBe(true);
-    expect(cfg.slackWebhookUrl).toBe('https://hooks.slack.com/x');
-    expect(cfg.notionApiKey).toBe('secret_x');
-    expect(cfg.notionDatabaseId).toBe('db_x');
-  });
-
-  it('rejects SLACK_SLASH_COMMAND_ENABLED=true without SLACK_SIGNING_SECRET', () => {
-    process.env.SLACK_SLASH_COMMAND_ENABLED = 'true';
-    delete process.env.SLACK_SIGNING_SECRET;
-    expect(() => getConfig()).toThrow(/SLACK_SIGNING_SECRET/);
-  });
-
-  it('accepts SLACK_SLASH_COMMAND_ENABLED=true with signing secret', () => {
-    process.env.SLACK_SLASH_COMMAND_ENABLED = 'true';
-    process.env.SLACK_SIGNING_SECRET = 'shhh';
-    const cfg = getConfig();
-    expect(cfg.slackSlashCommandEnabled).toBe(true);
-    expect(cfg.slackSigningSecret).toBe('shhh');
-  });
-
-  it('does not enforce reporting validation when both features are disabled', () => {
-    process.env.WEEKLY_DIGEST_ENABLED = 'false';
-    process.env.SLACK_SLASH_COMMAND_ENABLED = 'false';
-    delete process.env.SLACK_WEBHOOK_URL;
-    delete process.env.SLACK_SIGNING_SECRET;
-    delete process.env.NOTION_API_KEY;
-    delete process.env.NOTION_DATABASE_ID;
-    expect(() => getConfig()).not.toThrow();
-  });
-
-  it('rejects an invalid WEEKLY_DIGEST_CRON even when digest is disabled', () => {
-    process.env.WEEKLY_DIGEST_ENABLED = 'false';
-    process.env.WEEKLY_DIGEST_CRON = 'not a cron';
-    expect(() => getConfig()).toThrow(/WEEKLY_DIGEST_CRON/);
-  });
-
-  it('rejects a malformed SLACK_WEBHOOK_URL', () => {
-    process.env.SLACK_WEBHOOK_URL = 'not-a-url';
-    expect(() => getConfig()).toThrow(/SLACK_WEBHOOK_URL must be a valid URL/);
-  });
-
-  it('accepts SLACK_WEBHOOK_URL on a corporate-proxy host', () => {
-    process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack-corp.example.com/services/abc';
-    // No throw expected
-    expect(() => getConfig()).not.toThrow();
+    expect(() => getConfig()).toThrow(/USAGE_API_KEY must be a strong random secret/);
   });
 });

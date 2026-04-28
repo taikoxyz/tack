@@ -31,7 +31,7 @@ export class PaymentRecorder {
     if (Object.values(required).some((v) => v === undefined)) {
       this.logger.warn(
         { requestId: ctx.requestId, paymentResult: result },
-        'payment recorder skipped: missing required reporting fields'
+        'payment recorder skipped: missing required usage fields'
       );
       return;
     }

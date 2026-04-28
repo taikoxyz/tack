@@ -1,7 +1,7 @@
 /**
  * Per-day request counters. All `day` strings are UTC `YYYY-MM-DD` —
  * callers must compute them in UTC (`new Date().toISOString().slice(0, 10)`)
- * to match the weekly digest window boundaries. Mixing UTC and local-time
+ * to match usage API window boundaries. Mixing UTC and local-time
  * day strings would skew counts during DST transitions.
  */
 import type Database from 'better-sqlite3';
@@ -39,8 +39,8 @@ export class MetricsRepository {
    * Increments the counter for `(day, bucket)`, creating the row if absent.
    *
    * @param day UTC day, format `YYYY-MM-DD`. Must match the format used by
-   *   the digest window boundaries. Other formats will create parallel rows
-   *   that the digest will silently miss.
+ *   the usage API window boundaries. Other formats will create parallel rows
+ *   that the usage API will silently miss.
    * @param bucket One of `METRICS_BUCKETS`.
    */
   increment(day: string, bucket: MetricsBucket): void {

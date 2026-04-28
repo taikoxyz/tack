@@ -42,7 +42,7 @@ export function createDb(dbPath: string): Database.Database {
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_pins_expires_at ON pins(expires_at)');
 
-  // Reporting feature: payments raw event log
+  // Usage metrics: payments raw event log
   db.exec(`
     CREATE TABLE IF NOT EXISTS payments (
       id              TEXT PRIMARY KEY,
@@ -74,7 +74,7 @@ export function createDb(dbPath: string): Database.Database {
     );
   `);
 
-  // Reporting feature: pin size column
+  // Usage metrics: pin size column
   if (!columns.some((col) => col.name === 'size_bytes')) {
     db.exec('ALTER TABLE pins ADD COLUMN size_bytes INTEGER');
   }
