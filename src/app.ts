@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -30,6 +30,7 @@ import type { AgentCardConfig, PinStatusValue } from './types';
 import { landingPageHtml } from './landing';
 import { buildOpenApiDocument } from './openapi';
 import type { UsageMetricsService, UsageSummary, UsageWindowInput } from './services/usage/usage-service';
+import type { UsageApiKeyRepository } from './repositories/usage-api-key-repository';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
@@ -181,19 +182,9 @@ function extractUsageApiKey(headers: Headers): string | null {
   return match?.[1]?.trim() || null;
 }
 
-function constantTimeEqual(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(leftBuffer, rightBuffer);
-}
-
-function hasValidUsageApiKey(headers: Headers, configuredApiKey: string): boolean {
+function authenticateUsageApiKey(headers: Headers, usageApiKeys: UsageApiKeyRepository): boolean {
   const provided = extractUsageApiKey(headers);
-  return Boolean(provided && constantTimeEqual(provided, configuredApiKey));
+  return Boolean(provided && usageApiKeys.authenticate(provided));
 }
 
 function usageUnauthorizedResponse(): Response {
@@ -429,7 +420,7 @@ export interface AppServices {
   paymentRecorder?: import('./services/usage/payment-recorder.js').PaymentRecorder;
   metricsRepository?: import('./repositories/metrics-repository.js').MetricsRepository;
   usageMetrics?: UsageMetricsService;
-  usageApiKey?: string;
+  usageApiKeys?: UsageApiKeyRepository;
 }
 
 interface AppEnv {
@@ -595,7 +586,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     return c.json(document, 200, { 'Cache-Control': 'public, max-age=3600' });
   });
 
-  if (services.usageMetrics && services.usageApiKey) {
+  if (services.usageMetrics && services.usageApiKeys) {
     const usagePayload = (c: Context<AppEnv>) => {
       const summary = services.usageMetrics!.summary(parseUsageWindow(new URL(c.req.url).searchParams));
       c.header('Cache-Control', 'no-store');
@@ -620,7 +611,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     };
 
     app.use('/usage/*', async (c, next) => {
-      if (!hasValidUsageApiKey(c.req.raw.headers, services.usageApiKey!)) {
+      if (!authenticateUsageApiKey(c.req.raw.headers, services.usageApiKeys!)) {
         return usageUnauthorizedResponse();
       }
 
@@ -820,7 +811,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
         },
         usage: {
           endpoints: ['/usage/summary', '/usage/revenue', '/usage/requests', '/usage/pins', '/usage/wallets'],
-          auth: 'USAGE_API_KEY via X-API-Key or Authorization: Bearer'
+          auth: 'active usage API key via X-API-Key or Authorization: Bearer'
         }
       },
       payments: {

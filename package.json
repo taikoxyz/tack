@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "release:notes": "node scripts/extract-changelog-section.mjs",
     "smoke:x402": "tsx src/scripts/x402-smoke.ts",
+    "usage:key": "tsx src/scripts/usage-api-key.ts",
     "build:landing": "tsx scripts/build-landing.ts"
   },
   "dependencies": {

@@ -131,7 +131,7 @@ function buildGuidance(input: BuildOpenApiInput): string {
     pricingLine,
     `Uploads are capped at ${Math.floor(input.uploadMaxSizeBytes / (1024 * 1024))}MB. POST /pins takes a CID; POST /upload takes a multipart file.`,
     'Retrieval via GET /ipfs/:cid is free by default. Owners may set a paywall via meta.retrievalPrice when creating the pin — paywalled CIDs return 402 with a runtime challenge.',
-    'Operator usage and revenue metrics are available at GET /usage/summary, /usage/revenue, /usage/requests, /usage/pins, and /usage/wallets. These routes require USAGE_API_KEY via X-API-Key or Authorization: Bearer.',
+    'Operator usage and revenue metrics are available at GET /usage/summary, /usage/revenue, /usage/requests, /usage/pins, and /usage/wallets. These routes require an active usage API key via X-API-Key or Authorization: Bearer.',
     'Conforms to the IPFS Pinning Service API (https://ipfs.github.io/pinning-services-api-spec/).'
   ].join(' ');
 }
@@ -491,7 +491,7 @@ export function buildOpenApiDocument(input: BuildOpenApiInput): Record<string, u
           in: 'header',
           name: 'X-API-Key',
           description:
-            'Operator API key configured by USAGE_API_KEY. Usage endpoints also accept `Authorization: Bearer <key>`.'
+            'Active operator API key from the usage_api_keys table. Usage endpoints also accept `Authorization: Bearer <key>`.'
         }
       }
     }

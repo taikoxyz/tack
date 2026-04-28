@@ -35,7 +35,6 @@ export interface AppConfig {
   mppPayTo: string;
   mppTestnet: boolean;
   mppTempoRpcUrl?: string;
-  usageApiKey?: string;
 }
 
 const PLACEHOLDER_EVM_ADDRESSES = new Set([
@@ -46,11 +45,6 @@ const PLACEHOLDER_WALLET_AUTH_SECRETS = new Set([
   'change-me',
   'changeme'
 ]);
-const PLACEHOLDER_USAGE_API_KEYS = new Set([
-  'change-me',
-  'changeme'
-]);
-
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback;
@@ -165,14 +159,6 @@ function validateProductionConfig(config: AppConfig): void {
     throw new Error('Invalid production configuration: WALLET_AUTH_TOKEN_SECRET must be a strong random secret');
   }
 
-  if (!config.usageApiKey) {
-    throw new Error('Invalid production configuration: USAGE_API_KEY is required');
-  }
-
-  if (config.usageApiKey.trim().length < 32 || PLACEHOLDER_USAGE_API_KEYS.has(config.usageApiKey.trim().toLowerCase())) {
-    throw new Error('Invalid production configuration: USAGE_API_KEY must be a strong random secret');
-  }
-
   if (isPlaceholderEvmAddress(config.x402TaikoPayTo)) {
     throw new Error('Invalid production configuration: X402_TAIKO_PAY_TO must be a real wallet address');
   }
@@ -203,7 +189,6 @@ export function getConfig(): AppConfig {
 
   const mppSecretKey = process.env.MPP_SECRET_KEY?.trim() || undefined;
   const mppTempoRpcUrl = process.env.MPP_TEMPO_RPC_URL?.trim() || undefined;
-  const usageApiKey = process.env.USAGE_API_KEY?.trim() || undefined;
 
   const config: AppConfig = {
     port: Number(process.env.PORT ?? 3000),
@@ -253,8 +238,7 @@ export function getConfig(): AppConfig {
     mppSecretKey,
     mppPayTo: process.env.MPP_PAY_TO ?? '0x0000000000000000000000000000000000000001',
     mppTestnet: parseBoolean(process.env.MPP_TESTNET, false),
-    mppTempoRpcUrl,
-    usageApiKey
+    mppTempoRpcUrl
   };
 
   if (!Number.isInteger(config.walletAuthTokenTtlSeconds) || config.walletAuthTokenTtlSeconds <= 0) {

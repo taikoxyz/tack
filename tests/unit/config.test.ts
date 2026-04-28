@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { getConfig } from '../../src/config';
 
 const originalEnv = { ...process.env };
@@ -7,7 +7,6 @@ const realBasePayTo = '0x3333333333333333333333333333333333333333';
 const realMppPayTo = '0x4444444444444444444444444444444444444444';
 const realUsdc = '0x2222222222222222222222222222222222222222';
 const placeholderAddress = '0x0000000000000000000000000000000000000001';
-const realUsageApiKey = '0123456789abcdef0123456789abcdef';
 
 function setTestEnv(overrides: Record<string, string>): void {
   process.env = {
@@ -35,8 +34,7 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: 'change-me',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: realUsdc,
-      USAGE_API_KEY: realUsageApiKey
+      X402_USDC_ASSET_ADDRESS: realUsdc
     });
 
     expect(() => getConfig()).toThrow('WALLET_AUTH_TOKEN_SECRET must be a strong random secret');
@@ -48,8 +46,7 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: placeholderAddress,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: realUsdc,
-      USAGE_API_KEY: realUsageApiKey
+      X402_USDC_ASSET_ADDRESS: realUsdc
     });
 
     expect(() => getConfig()).toThrow('X402_TAIKO_PAY_TO must be a real wallet address');
@@ -61,8 +58,7 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: placeholderAddress,
-      X402_USDC_ASSET_ADDRESS: realUsdc,
-      USAGE_API_KEY: realUsageApiKey
+      X402_USDC_ASSET_ADDRESS: realUsdc
     });
 
     expect(() => getConfig()).toThrow('X402_BASE_PAY_TO must be a real wallet address');
@@ -74,8 +70,7 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: placeholderAddress,
-      USAGE_API_KEY: realUsageApiKey
+      X402_USDC_ASSET_ADDRESS: placeholderAddress
     });
 
     expect(() => getConfig()).toThrow('X402_USDC_ASSET_ADDRESS must be a real token address');
@@ -90,8 +85,7 @@ describe('config validation', () => {
       X402_BASE_PAY_TO: realBasePayTo,
       X402_USDC_ASSET_ADDRESS: realUsdc,
       MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef',
-      MPP_PAY_TO: realMppPayTo,
-      USAGE_API_KEY: realUsageApiKey
+      MPP_PAY_TO: realMppPayTo
     });
 
     const config = getConfig();
@@ -100,7 +94,6 @@ describe('config validation', () => {
     expect(config.x402BasePayTo).toBe(realBasePayTo);
     expect(config.x402UsdcAssetAddress).toBe(realUsdc);
     expect(config.mppPayTo).toBe(realMppPayTo);
-    expect(config.usageApiKey).toBe(realUsageApiKey);
     expect(config.walletAuthTokenAudience).toBe('tack-owner-api');
     expect(config.walletAuthTokenIssuer).toBe('tack');
     expect(config.walletAuthTokenTtlSeconds).toBe(900);
@@ -112,8 +105,7 @@ describe('config validation', () => {
       WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
-      X402_USDC_ASSET_ADDRESS: realUsdc,
-      USAGE_API_KEY: realUsageApiKey
+      X402_USDC_ASSET_ADDRESS: realUsdc
     });
 
     const config = getConfig();
@@ -128,8 +120,7 @@ describe('config validation', () => {
       X402_BASE_PAY_TO: realBasePayTo,
       X402_USDC_ASSET_ADDRESS: realUsdc,
       MPP_SECRET_KEY: 'tooshort',
-      MPP_PAY_TO: realMppPayTo,
-      USAGE_API_KEY: realUsageApiKey
+      MPP_PAY_TO: realMppPayTo
     });
 
     expect(() => getConfig()).toThrow('MPP_SECRET_KEY must be at least 32 bytes');
@@ -142,8 +133,7 @@ describe('config validation', () => {
       X402_TAIKO_PAY_TO: realTaikoPayTo,
       X402_BASE_PAY_TO: realBasePayTo,
       X402_USDC_ASSET_ADDRESS: realUsdc,
-      MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef',
-      USAGE_API_KEY: realUsageApiKey
+      MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef'
     });
 
     expect(() => getConfig()).toThrow('MPP_PAY_TO must be a real wallet address when MPP is enabled');
@@ -239,47 +229,5 @@ describe('config validation', () => {
     expect(config.x402MaxPriceUsd).toBe(25.0);
     expect(config.x402DefaultDurationMonths).toBe(6);
     expect(config.x402MaxDurationMonths).toBe(12);
-  });
-});
-
-describe('usage API config', () => {
-  beforeEach(() => {
-    process.env = {
-      ...originalEnv,
-      WALLET_AUTH_TOKEN_SECRET: 'test-wallet-auth-secret'
-    };
-    delete process.env.USAGE_API_KEY;
-  });
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it('reads USAGE_API_KEY when configured', () => {
-    process.env.USAGE_API_KEY = '0123456789abcdef0123456789abcdef';
-    const cfg = getConfig();
-    expect(cfg.usageApiKey).toBe('0123456789abcdef0123456789abcdef');
-  });
-
-  it('requires a strong USAGE_API_KEY in production', () => {
-    process.env.NODE_ENV = 'production';
-    process.env.WALLET_AUTH_TOKEN_SECRET = '0123456789abcdef0123456789abcdef';
-    process.env.X402_TAIKO_PAY_TO = realTaikoPayTo;
-    process.env.X402_BASE_PAY_TO = realBasePayTo;
-    process.env.X402_USDC_ASSET_ADDRESS = realUsdc;
-    delete process.env.USAGE_API_KEY;
-
-    expect(() => getConfig()).toThrow(/USAGE_API_KEY/);
-  });
-
-  it('rejects placeholder USAGE_API_KEY values in production', () => {
-    process.env.NODE_ENV = 'production';
-    process.env.WALLET_AUTH_TOKEN_SECRET = '0123456789abcdef0123456789abcdef';
-    process.env.X402_TAIKO_PAY_TO = realTaikoPayTo;
-    process.env.X402_BASE_PAY_TO = realBasePayTo;
-    process.env.X402_USDC_ASSET_ADDRESS = realUsdc;
-    process.env.USAGE_API_KEY = 'change-me';
-
-    expect(() => getConfig()).toThrow(/USAGE_API_KEY must be a strong random secret/);
   });
 });

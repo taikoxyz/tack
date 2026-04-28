@@ -66,7 +66,7 @@ Implements the [IPFS Pinning Service API](https://ipfs.github.io/pinning-service
 
 **Retrieval pricing**: `meta.retrievalPrice` is controlled by the first wallet that pins a CID through Tack. Later pins of the same CID cannot redirect premium retrieval payouts.
 
-**Usage API**: operator metrics are exposed through `/usage/*` endpoints and require `USAGE_API_KEY` via `X-API-Key: <key>` or `Authorization: Bearer <key>`. Query windows use UTC days: `?start=2026-04-21&end=2026-04-28`, where `end` is exclusive. If omitted, the window defaults to the last seven UTC days including today.
+**Usage API**: operator metrics are exposed through `/usage/*` endpoints and require an active key from the `usage_api_keys` table via `X-API-Key: <key>` or `Authorization: Bearer <key>`. Query windows use UTC days: `?start=2026-04-21&end=2026-04-28`, where `end` is exclusive. If omitted, the window defaults to the last seven UTC days including today. Create, import, list, and revoke keys with `pnpm usage:key`.
 
 ## For AI Agents
 

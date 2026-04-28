@@ -9,6 +9,7 @@ import { GatewayTimeoutError, UpstreamServiceError } from '../../src/lib/errors'
 import { PinRepository } from '../../src/repositories/pin-repository';
 import { MetricsRepository } from '../../src/repositories/metrics-repository';
 import { PaymentRepository } from '../../src/repositories/payment-repository';
+import { hashUsageApiKey, UsageApiKeyRepository } from '../../src/repositories/usage-api-key-repository';
 import type { IpfsClient } from '../../src/services/ipfs-rpc-client';
 import { GatewayContentCache } from '../../src/services/content-cache';
 import { PinningService } from '../../src/services/pinning-service';
@@ -1860,7 +1861,20 @@ describe('API integration', () => {
   });
 
   describe('usage metrics API', () => {
-    it('requires the configured API key', async () => {
+    const rawUsageApiKey = '0123456789abcdef0123456789abcdef';
+
+    const createUsageApiKeys = (): UsageApiKeyRepository => {
+      const usageApiKeys = new UsageApiKeyRepository(db);
+      usageApiKeys.create({
+        id: 'uak_test',
+        name: 'test-client',
+        keyHash: hashUsageApiKey(rawUsageApiKey),
+        createdAt: '2026-04-28T00:00:00.000Z',
+      });
+      return usageApiKeys;
+    };
+
+    it('requires an active usage API key', async () => {
       const usageMetrics = new UsageMetricsService({
         payments: new PaymentRepository(db),
         metrics: new MetricsRepository(db),
@@ -1868,7 +1882,7 @@ describe('API integration', () => {
       });
       const usageApp = buildApp({
         usageMetrics,
-        usageApiKey: '0123456789abcdef0123456789abcdef',
+        usageApiKeys: createUsageApiKeys(),
       });
 
       const res = await usageApp.request('/usage/summary');
@@ -1889,7 +1903,7 @@ describe('API integration', () => {
       );
       const usageApp = buildApp({
         usageMetrics,
-        usageApiKey: '0123456789abcdef0123456789abcdef',
+        usageApiKeys: createUsageApiKeys(),
       });
 
       paymentRepository.insert({
@@ -1926,7 +1940,7 @@ describe('API integration', () => {
       });
 
       const res = await usageApp.request('/usage/summary?start=2026-04-21&end=2026-04-22', {
-        headers: { 'x-api-key': '0123456789abcdef0123456789abcdef' },
+        headers: { 'x-api-key': rawUsageApiKey },
       });
 
       expect(res.status).toBe(200);
@@ -1959,11 +1973,11 @@ describe('API integration', () => {
       );
       const usageApp = buildApp({
         usageMetrics,
-        usageApiKey: '0123456789abcdef0123456789abcdef',
+        usageApiKeys: createUsageApiKeys(),
       });
 
       const res = await usageApp.request('/usage/revenue?start=2026-04-21&end=2026-04-22', {
-        headers: { authorization: 'Bearer 0123456789abcdef0123456789abcdef' },
+        headers: { authorization: `Bearer ${rawUsageApiKey}` },
       });
 
       expect(res.status).toBe(200);
@@ -1981,11 +1995,11 @@ describe('API integration', () => {
       });
       const usageApp = buildApp({
         usageMetrics,
-        usageApiKey: '0123456789abcdef0123456789abcdef',
+        usageApiKeys: createUsageApiKeys(),
       });
 
       const res = await usageApp.request('/usage/summary?start=bad&end=2026-04-22', {
-        headers: { 'x-api-key': '0123456789abcdef0123456789abcdef' },
+        headers: { 'x-api-key': rawUsageApiKey },
       });
 
       expect(res.status).toBe(400);

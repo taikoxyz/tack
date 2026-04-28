@@ -72,6 +72,17 @@ export function createDb(dbPath: string): Database.Database {
       count   INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (day, bucket)
     );
+
+    CREATE TABLE IF NOT EXISTS usage_api_keys (
+      id           TEXT PRIMARY KEY,
+      name         TEXT NOT NULL UNIQUE,
+      key_hash     TEXT NOT NULL UNIQUE,
+      created_at   TEXT NOT NULL,
+      last_used_at TEXT,
+      revoked_at   TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_api_keys_revoked_at ON usage_api_keys(revoked_at);
   `);
 
   // Usage metrics: pin size column

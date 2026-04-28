@@ -10,6 +10,7 @@ import { createDb } from './db';
 import { PinRepository } from './repositories/pin-repository';
 import { PaymentRepository } from './repositories/payment-repository';
 import { MetricsRepository } from './repositories/metrics-repository';
+import { UsageApiKeyRepository } from './repositories/usage-api-key-repository';
 import { IpfsRpcClient } from './services/ipfs-rpc-client';
 import { createApp } from './app';
 import { PinningService } from './services/pinning-service';
@@ -80,6 +81,7 @@ const pinningService = new PinningService(repository, ipfsClient, config.delegat
 
 const paymentRepository = new PaymentRepository(db);
 const metricsRepository = new MetricsRepository(db);
+const usageApiKeys = new UsageApiKeyRepository(db);
 const paymentRecorder = new PaymentRecorder(paymentRepository, logger);
 const usageMetrics = new UsageMetricsService({
   payments: paymentRepository,
@@ -351,7 +353,7 @@ const app = createApp({
   paymentRecorder,
   metricsRepository,
   usageMetrics,
-  usageApiKey: config.usageApiKey,
+  usageApiKeys,
   agentCard: {
     name: 'Tack',
     description: 'Pin to IPFS, pay with your wallet. No account needed.',
