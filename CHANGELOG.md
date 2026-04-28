@@ -9,6 +9,26 @@ Format:
 
 ## [Unreleased]
 
+## [v0.2.3] - 2026-04-28
+
+### Added
+- Operator usage and revenue API: `GET /usage/summary`, `/usage/revenue`, `/usage/requests`, `/usage/pins`, `/usage/wallets`. Returns daily-aggregated revenue (split by protocol and endpoint), request counters (total / paid / `402`-rejected / free), pin counts and bytes, and paying-wallet metrics. UTC-day windows via `?start=YYYY-MM-DD&end=YYYY-MM-DD` (end exclusive); defaults to the last 7 days.
+- Operator API key management: keys are stored hashed in a new `usage_api_keys` table and required on every `/usage/*` request via `X-API-Key` or `Authorization: Bearer`. Manage with `pnpm usage:key create|import|revoke|list`. Wallet bearer tokens (used for owner endpoints) do not authenticate the usage API.
+- Agent skills under `skills/` for drop-in agent integration: `skills/tack-pinning` (pin / upload / retrieve / paywall / owner ops) and `skills/tack-usage-api` (operator metrics + key management).
+
+### Changed
+- `paymentResult.chainName` for x402 now emits human-readable names (`'taiko'`, `'base'`) instead of the raw `eip155:N` identifier, matching the MPP middleware's `chainName: 'tempo'` contract. Falls back to the raw network identifier for unknown chainIds.
+
+### Fixed
+- MPP charges that settle on-chain but whose handler later returns non-2xx (or throws) are now correctly recorded in the `payments` table and counted in `requests.paid`. Previously the success-path 2xx gate dropped them, causing revenue under-reporting on server-error executions.
+- `/usage/*` requests no longer increment the `total` / `paid` / `rejected_402` counters, so a polling dashboard can no longer inflate the very metrics it reads.
+- Usage API errors are now classified correctly: only window-validation errors return `400 bad_request`; SQLite or other runtime faults propagate as `500` instead of being misreported as client errors with raw error messages leaked.
+- MPP USD→atomic conversion now routes through the canonical `usdToAssetAmount` helper, so MPP and x402 produce the same `payments.amount_atomic` for identical USD inputs at boundary amounts (`Number.EPSILON` guard + minimum-of-1 floor).
+- x402: when payer wallet extraction fails, the middleware now skips setting `paymentResult` so the handler's header-based `requirePaidWallet(...)` fallback engages, instead of recording a `payer_wallet=''` row.
+
+### Docs
+- Operator `/usage/*` routes are no longer advertised in the public OpenAPI document, A2A agent card (`capabilities.usage` removed), README API table, or `/llms.txt`. The endpoints still work at the same paths but are no longer surfaced to discovery clients.
+
 ## [v0.2.2] - 2026-04-28
 
 ### Added
