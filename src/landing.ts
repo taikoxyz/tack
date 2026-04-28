@@ -1,11 +1,9 @@
 const PROD_URL = process.env.LANDING_URL ?? 'https://tack.inferenceroom.ai';
 
-export const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#050912"/>
-  <rect x="14" y="14" width="36" height="14" rx="3" fill="none" stroke="#e81899" stroke-width="4"/>
-  <rect x="14" y="36" width="36" height="14" rx="3" fill="none" stroke="#7c3aed" stroke-width="4"/>
-  <circle cx="23" cy="21" r="2" fill="#f3f3f3"/>
-  <circle cx="23" cy="43" r="2" fill="#f3f3f3"/>
+export const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <rect width="128" height="64" rx="10" fill="#05070d"/>
+  <path d="M23 14 12 50" stroke="#e81899" stroke-width="5" stroke-linecap="round"/>
+  <text x="33" y="42" fill="#f3f3f3" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" font-weight="700" letter-spacing="0">tack</text>
 </svg>`;
 
 export function landingPageHtml(): string {
