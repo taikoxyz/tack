@@ -16,7 +16,7 @@ export function landingPageHtml(): string {
   <title>Tack — Storage for agents.</title>
   <meta name="description" content="IPFS pinning your autonomous agent calls directly. Pay-per-pin in USDC, no accounts, no API keys. Live on Taiko, Base, and Tempo." />
   <meta name="theme-color" content="#05070d" />
-  <link rel="icon" href="/favicon.svg?v=wordmark" type="image/svg+xml" />
+  <link rel="icon" href="/favicon.svg?v=tack-wordmark-20260428" type="image/svg+xml" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Tack — Storage for agents." />
