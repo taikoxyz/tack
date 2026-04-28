@@ -9,8 +9,14 @@ Format:
 
 ## [Unreleased]
 
+## [v0.2.2] - 2026-04-28
+
+### Added
+- `/.well-known/agent.json` now publishes a `routes` array per capability (pinningApi + gateway) with `inputSchema` / `outputSchema` (JSON Schema) for every route, plus a top-level `openapi: '/openapi.json'` pointer. Discovery validators (e.g. x402scan) can consume per-endpoint schemas directly from the agent card. The legacy `endpoints: string[]` field is kept for backward compatibility.
+
 ### Changed
 - Public API and landing domain moved from `tack.taiko.xyz` to `tack.inferenceroom.ai`. Affects the `LANDING_URL` default, `/llms.txt` `base` fallback, README quickstart, deploy environment URLs, and request-URL test fixtures. Taiko-chain references (x402 facilitator, RPC, payment chain badges) are unchanged — payments still settle on Taiko Alethia.
+- The MPP `realm` advertised in `WWW-Authenticate: Payment` challenges is now the origin **host** (e.g. `tack.inferenceroom.ai`) instead of the full origin URL. This restores on-chain attribution in x402scan / mppx discovery, which keys settled-volume stats by host.
 
 ## [v0.2.1] - 2026-04-23
 
