@@ -36,7 +36,7 @@ import {
   UPLOAD_INPUT_SCHEMA,
   UPLOAD_OUTPUT_SCHEMA
 } from './openapi';
-import type { UsageMetricsService, UsageSummary, UsageWindowInput } from './services/usage/usage-service';
+import { UsageWindowError, type UsageMetricsService, type UsageSummary, type UsageWindowInput } from './services/usage/usage-service';
 import type { UsageApiKeyRepository } from './repositories/usage-api-key-repository';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
@@ -499,10 +499,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       await next();
 
       // Usage metrics: counters + payment recording. Pure side effects; never throw.
+      // Operator metrics endpoints (/usage/*) are excluded so a polling dashboard
+      // can't inflate the very counters it reads (self-referential metrics loop).
       const status = c.res.status;
       const day = utcDay();
+      const isOperatorMetricsRequest = requestPath.startsWith('/usage/');
 
-      if (services.metricsRepository) {
+      if (services.metricsRepository && !isOperatorMetricsRequest) {
         try {
           services.metricsRepository.increment(day, 'total');
           if (status === 402) {
@@ -515,7 +518,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
       const paymentResult = c.get('paymentResult');
 
-      if (paymentResult && status >= 200 && status < 300) {
+      // MPP settles before the handler runs, so a paid request that later returns
+      // a non-2xx response still moved money on-chain. x402 only sets
+      // paymentResult after a successful settle, which is itself gated on a 2xx
+      // handler response, so the no-status-gate condition is equivalent for x402
+      // but fixes under-reporting for MPP (and for paywalled retrievals that
+      // legitimately return 304).
+      if (paymentResult) {
         if (services.metricsRepository) {
           try {
             services.metricsRepository.increment(day, 'paid');
@@ -547,8 +556,9 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     } catch (error) {
       const errorStatus = statusFromError(error);
       const day = utcDay();
+      const isOperatorMetricsRequest = requestPath.startsWith('/usage/');
 
-      if (services.metricsRepository) {
+      if (services.metricsRepository && !isOperatorMetricsRequest) {
         try {
           services.metricsRepository.increment(day, 'total');
           if (errorStatus === 402) {
@@ -607,10 +617,10 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       return summary;
     };
 
-    const usageBadRequest = (c: Context<AppEnv>, err: unknown) => c.json(
+    const usageBadRequest = (c: Context<AppEnv>, err: UsageWindowError) => c.json(
       {
         error: 'bad_request',
-        message: err instanceof Error ? err.message : 'invalid usage window',
+        message: err.message,
       },
       400,
       { 'Cache-Control': 'no-store' }
@@ -620,7 +630,14 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       try {
         return c.json(select(usagePayload(c)));
       } catch (err) {
-        return usageBadRequest(c, err);
+        // Only window-validation errors map to 400. Database / runtime errors
+        // propagate so the global error handler can return 500 — otherwise an
+        // SQLite outage is silently misreported as a client error and its raw
+        // message is leaked.
+        if (err instanceof UsageWindowError) {
+          return usageBadRequest(c, err);
+        }
+        throw err;
       }
     };
 

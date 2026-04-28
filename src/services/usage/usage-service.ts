@@ -58,6 +58,18 @@ export type UsageClock = () => Date;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_WINDOW_DAYS = 366;
 
+/**
+ * Thrown for invalid window inputs (bad date format, start ≥ end, oversized
+ * window). The HTTP layer maps this to 400; any other error from `summary()`
+ * (e.g. SQLite faults) is treated as a 500.
+ */
+export class UsageWindowError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UsageWindowError';
+  }
+}
+
 function toUtcDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -74,12 +86,12 @@ function dayToIso(day: string): string {
 
 function parseDay(day: string, fieldName: string): Date {
   if (!DAY_RE.test(day)) {
-    throw new Error(`${fieldName} must be a UTC day in YYYY-MM-DD format`);
+    throw new UsageWindowError(`${fieldName} must be a UTC day in YYYY-MM-DD format`);
   }
 
   const parsed = new Date(`${day}T00:00:00.000Z`);
   if (Number.isNaN(parsed.getTime()) || toUtcDay(parsed) !== day) {
-    throw new Error(`${fieldName} must be a valid UTC day in YYYY-MM-DD format`);
+    throw new UsageWindowError(`${fieldName} must be a valid UTC day in YYYY-MM-DD format`);
   }
 
   return parsed;
@@ -95,11 +107,11 @@ function resolveWindow(input: UsageWindowInput | undefined, now: Date): UsageWin
   const days = (end.getTime() - start.getTime()) / 86_400_000;
 
   if (days <= 0) {
-    throw new Error('start must be before end');
+    throw new UsageWindowError('start must be before end');
   }
 
   if (days > MAX_WINDOW_DAYS) {
-    throw new Error(`usage window must not exceed ${MAX_WINDOW_DAYS} days`);
+    throw new UsageWindowError(`usage window must not exceed ${MAX_WINDOW_DAYS} days`);
   }
 
   return {

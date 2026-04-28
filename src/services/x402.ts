@@ -457,7 +457,20 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
             // Usage metrics: set paymentResult so PaymentRecorder can write a row.
             // Wallet: extracted from the EIP-3009 authorization (or permit2 / from)
             // in the payment payload — the canonical signer of the payment.
-            const wallet = extractWalletFromPayload(paymentPayload) ?? '';
+            // If extraction fails we skip the paymentResult set entirely, leaving
+            // the handler to fall back to extractPaidWalletFromHeaders. Coercing
+            // to '' would defeat the handler's `?? requirePaidWallet(...)` guard
+            // (empty string is not nullish) and would record a payments row with
+            // payer_wallet=''.
+            const wallet = extractWalletFromPayload(paymentPayload);
+            if (!wallet) {
+              logger.warn(
+                { path: context.path, method: context.method },
+                'x402: settled payment but could not extract payer wallet from payload — skipping paymentResult; handler will fall back to header-based identity'
+              );
+              c.res = res;
+              return;
+            }
 
             // Network / asset / amount: probed via typed helper that handles both
             // V1 (maxAmountRequired) and V2 (amount) PaymentRequirements shapes.
@@ -469,6 +482,15 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
             // Decimals: look up the matching chain in config; default 6.
             const matchedChain = config.chains.find((ch) => ch.network === network);
             const assetDecimals = matchedChain?.usdcAssetDecimals ?? 6;
+
+            // ChainName: human-readable name (matches MPP's `chainName: 'tempo'`
+            // contract). Falls back to the raw network identifier if unknown so
+            // the field is never empty.
+            const chainNameByChainId: Record<number, string> = {
+              167000: 'taiko',
+              8453: 'base',
+            };
+            const chainName = chainNameByChainId[chainId] ?? network;
 
             const parsedAmount = Number(amountAtomic);
             const amountUsd = Number.isFinite(parsedAmount) ? parsedAmount / 10 ** assetDecimals : 0;
@@ -505,7 +527,7 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
             c.set('paymentResult' as any, {
               wallet,
               protocol: 'x402',
-              chainName: network,
+              chainName,
               chainId,
               assetAddress,
               assetDecimals,

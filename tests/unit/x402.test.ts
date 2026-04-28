@@ -674,7 +674,7 @@ describe('x402 middleware', () => {
     expect(pr).not.toBeNull();
     expect(pr.wallet).toBe(payerWallet.toLowerCase());
     expect(pr.protocol).toBe('x402');
-    expect(pr.chainName).toBe('eip155:167000');
+    expect(pr.chainName).toBe('taiko');
     expect(pr.chainId).toBe(167000);
     expect(pr.endpoint).toBe('pin');
     expect(pr.assetAddress).toBe(taikoChain.usdcAssetAddress.toLowerCase());
