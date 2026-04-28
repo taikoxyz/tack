@@ -8,6 +8,9 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getConfig } from './config';
 import { createDb } from './db';
 import { PinRepository } from './repositories/pin-repository';
+import { PaymentRepository } from './repositories/payment-repository';
+import { MetricsRepository } from './repositories/metrics-repository';
+import { UsageApiKeyRepository } from './repositories/usage-api-key-repository';
 import { IpfsRpcClient } from './services/ipfs-rpc-client';
 import { createApp } from './app';
 import { PinningService } from './services/pinning-service';
@@ -17,7 +20,14 @@ import { InMemoryRateLimiter } from './services/rate-limiter';
 import { logger } from './services/logger';
 import { createMppChallengeEnhancer } from './services/payment/challenge-enhancer';
 import { extractIpfsCidFromPath } from './services/payment/http';
-import { createMppInstance } from './services/payment/mpp';
+import {
+  createMppInstance,
+  createMppChainContext,
+  TEMPO_USDC_E_MAINNET,
+  TEMPO_PATH_USD_TESTNET,
+  TEMPO_USDC_E_DECIMALS,
+  TEMPO_PATH_USD_DECIMALS,
+} from './services/payment/mpp';
 import { BASE_CHAIN } from './services/payment/chains/base';
 import { createMppPaymentMiddleware } from './services/payment/middleware';
 import { createTempoPayerResolver, type FetchTempoReceipt } from './services/payment/mpp-payer';
@@ -30,6 +40,8 @@ import {
   usdToAssetAmount,
   type LinearPricingConfig
 } from './services/payment/pricing';
+import { PaymentRecorder } from './services/usage/payment-recorder';
+import { UsageMetricsService } from './services/usage/usage-service';
 
 function getAppVersion(): string {
   try {
@@ -66,6 +78,17 @@ const pinningService = new PinningService(repository, ipfsClient, config.delegat
   maxGatewayContentSizeBytes: config.gatewayMaxContentSizeBytes,
   replicas: replicaClients
 });
+
+const paymentRepository = new PaymentRepository(db);
+const metricsRepository = new MetricsRepository(db);
+const usageApiKeys = new UsageApiKeyRepository(db);
+const paymentRecorder = new PaymentRecorder(paymentRepository, logger);
+const usageMetrics = new UsageMetricsService({
+  payments: paymentRepository,
+  metrics: metricsRepository,
+  pins: repository,
+});
+
 // Build the x402 chains array with the operator-configured primary chain
 // first (Taiko by default) and Base always appended. If the operator has
 // explicitly set X402_NETWORK to Base, treat Base as the primary and skip
@@ -159,15 +182,13 @@ const fetchTempoReceipt: FetchTempoReceipt | null = tempoPublicClient
   : null;
 
 const mppCurrencyAddress = (
-  mppTestnet
-    ? '0x20c0000000000000000000000000000000000000'
-    : '0x20C000000000000000000000b9537d11c60E8b50'
+  mppTestnet ? TEMPO_PATH_USD_TESTNET : TEMPO_USDC_E_MAINNET
 ) as `0x${string}`;
 const mppCurrencySymbol = mppTestnet ? 'pathUSD' : 'USDC.e';
 // TIP-20 stablecoins on Tempo (USDC.e, pathUSD, etc.) all use 6 decimals;
-// hardcoded here so the agent card and payer resolver stay in lockstep
-// with mppx's internal defaults (see `mppx/tempo/internal/defaults.ts`).
-const mppCurrencyDecimals = 6;
+// sourced from the canonical mpp.ts constants that mirror mppx's internal
+// defaults (see `mppx/tempo/internal/defaults.ts`).
+const mppCurrencyDecimals = mppTestnet ? TEMPO_PATH_USD_DECIMALS : TEMPO_USDC_E_DECIMALS;
 
 const paymentPricingConfig: LinearPricingConfig = {
   ratePerGbMonthUsd: config.x402RatePerGbMonthUsd,
@@ -263,6 +284,7 @@ const mppMiddleware: MiddlewareHandler | undefined = mppx && fetchTempoReceipt
   ? createMppPaymentMiddleware({
       mppx,
       requirementFn: resolveMppRequirement,
+      chainContext: createMppChainContext(config.mppTestnet),
       resolveVerifiedPayer: createTempoPayerResolver({
         fetchReceipt: fetchTempoReceipt,
         getContext: async (request) => {
@@ -333,6 +355,10 @@ const app = createApp({
   rateLimiter,
   defaultDurationMonths: config.x402DefaultDurationMonths,
   maxDurationMonths: config.x402MaxDurationMonths,
+  paymentRecorder,
+  metricsRepository,
+  usageMetrics,
+  usageApiKeys,
   agentCard: {
     name: 'Tack',
     description: 'Pin to IPFS, pay with your wallet. No account needed.',

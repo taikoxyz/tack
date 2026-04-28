@@ -7,10 +7,15 @@ interface IpfsAddResponse {
   Size: string;
 }
 
+export interface IpfsAddResult {
+  hash: string;
+  size: number;
+}
+
 export interface IpfsClient {
   pinAdd(cid: string): Promise<void>;
   pinRm(cid: string): Promise<void>;
-  addContent(content: Blob, filename: string): Promise<string>;
+  addContent(content: Blob, filename: string): Promise<IpfsAddResult>;
   cat(cid: string, options?: { maxBytes?: number }): Promise<ArrayBuffer>;
 }
 
@@ -51,7 +56,7 @@ export class IpfsRpcClient implements IpfsClient {
     return this.postJson('/api/v0/id', undefined, this.timeoutMs, 'id');
   }
 
-  async addContent(content: Blob, filename: string): Promise<string> {
+  async addContent(content: Blob, filename: string): Promise<IpfsAddResult> {
     const form = new FormData();
     form.append('file', content, filename);
 
@@ -66,7 +71,9 @@ export class IpfsRpcClient implements IpfsClient {
     }
 
     const data = (await response.json()) as IpfsAddResponse;
-    return data.Hash;
+    const sizeRaw = Number.parseInt(data.Size ?? '0', 10);
+    const size = Number.isFinite(sizeRaw) && sizeRaw >= 0 ? sizeRaw : 0;
+    return { hash: data.Hash, size };
   }
 
   async cat(cid: string, options?: { maxBytes?: number }): Promise<ArrayBuffer> {

@@ -27,14 +27,19 @@ src/
       challenge-enhancer.ts   # Adds MPP WWW-Authenticate to x402 402s
       mpp-payer.ts            # Verifies MPP payer from on-chain Transfer event
     rate-limiter.ts           # Per-wallet/IP rate limiting
+    usage/
+      payment-recorder.ts     # records payment rows from PaymentResult
+      usage-service.ts        # windowed usage + revenue aggregation for APIs
     content-cache.ts          # In-memory LRU cache for gateway responses
     content-type.ts           # MIME type detection
     logger.ts                 # Pino structured logging
   repositories/
+    metrics-repository.ts     # daily request counters
+    payment-repository.ts     # CRUD + window aggregation on `payments`
     pin-repository.ts         # SQLite persistence, query filtering, owner isolation
 tests/
   unit/                       # Unit tests
-  integration/                # Integration tests
+  integration/                # Route-level API tests
 scripts/
   backup-db.sh                # SQLite backup script
 ```
@@ -68,7 +73,7 @@ scripts/
 ## Non-Obvious Things
 
 - **Wallet = identity**: There are no user accounts. The wallet that pays via x402 owns the pin. Owner endpoints enforce wallet isolation at the repository level.
-- **Production startup validation**: `config.ts` rejects placeholder EVM addresses and requires `X402_ENABLED=true` when `NODE_ENV=production`. The app will crash on boot if misconfigured.
+- **Production startup validation**: `config.ts` rejects placeholder EVM addresses and requires a strong `WALLET_AUTH_TOKEN_SECRET` when `NODE_ENV=production`. The app will crash on boot if misconfigured.
 - **Price is dynamic**: `x402.ts` calculates price as `base + (size_mb * per_mb)`, capped at `max`. The 402 response includes the exact amount.
 - **Replication is best-effort**: Primary pin must succeed. Replica failures are recorded in `PinStatus.info.replication` but don't fail the request.
 - **Gateway is optional paywall**: Content retrieval is free by default; owners can set `meta.retrievalPrice` to gate content behind x402.
@@ -78,3 +83,7 @@ scripts/
 - **Dual-challenge 402s**: An unpaid request gets BOTH `payment-required` (x402) and `WWW-Authenticate: Payment` (MPP) in the same 402. `challenge-enhancer.ts` wraps x402 middleware so MPP's `WWW-Authenticate` is grafted onto x402's 402 response post-hoc. Tests live in `tests/integration/app.test.ts > dual-protocol`.
 - **MPP settles before the handler, x402 settles after**: mppx verifies + broadcasts the Tempo transaction during `charge()`, while x402 settles via the facilitator post-response.
 - **MPP ownership comes from on-chain evidence, never `credential.source`**: The MPP credential has an optional `source` DID that is *client-controlled metadata* — `Credential.deserialize` spreads it through unverified, and the Tempo `verify()` never checks it. Trusting `source` would let a paying attacker mint owner-scoped JWTs for any victim wallet (forged `did:pkh:eip155:4217:<victim>`). Instead, `mpp-payer.ts` pulls the settled tx hash out of the mppx `Payment-Receipt` header, re-reads the Tempo receipt via a viem public client, and returns the `from` field of the matching TIP-20 `Transfer`/`TransferWithMemo` event. That EOA is the token holder who authorized the spend and is the canonical payer regardless of fee-payer relaying. Regression test: `tests/integration/app.test.ts > dual-protocol > ignores a forged credential.source`.
+- **Usage metrics always record**: `PaymentRecorder` writes payment rows and `MetricsRepository` increments per-request counters on every app process. Metrics start from the first deploy that includes recording; past payments before deploy are unrecoverable.
+- **Usage API is operator-keyed, not wallet-auth keyed**: `/usage/*` exposes service-level revenue and usage metrics and requires an active key from the `usage_api_keys` table via `X-API-Key` or `Authorization: Bearer`. Raw keys are not stored; use `pnpm usage:key create|import|revoke|list` to manage them. Revenue stats are not pin-owned data, so wallet auth does not apply.
+- **Usage API windows are UTC days**: `start` and `end` query params must be `YYYY-MM-DD`, and `end` is exclusive. Request counters are day-granular, so the service intentionally rejects arbitrary timestamp windows.
+- **MPP amount conversion happens in the middleware, not the recorder**: `requirement.amount` from `MppPaymentRequirement` is a *decimal USD string* (from `formatUsdAmount`). The MPP middleware converts to atomic units using `chainContext.assetDecimals` before setting `paymentResult.amountAtomic`, so the `payments.amount_atomic` column is unit-consistent with x402 (always atomic-integer strings).

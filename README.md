@@ -2,7 +2,7 @@
 
 **Pin to IPFS. Pay with your wallet. No account needed.**
 
-Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
+Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No pinning API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
 
 Built for AI agents, developer tooling, and any machine that needs to store data on IPFS without a human creating an account first.
 
@@ -64,6 +64,11 @@ Implements the [IPFS Pinning Service API](https://ipfs.github.io/pinning-service
 ## For AI Agents
 
 Tack exposes an [A2A](https://google.github.io/A2A/) agent card at `/.well-known/agent.json`. An agent with a wallet can discover Tack, pin content, and pay — no human in the loop.
+
+The repo ships [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) under `skills/` so coding agents can pick up Tack without reading the source:
+
+- [`skills/tack-pinning`](skills/tack-pinning/SKILL.md) — pin a CID, upload a file, retrieve content, manage pins, gate retrieval behind a paywall
+- [`skills/tack-usage-api`](skills/tack-usage-api/SKILL.md) — operator-only: read service-level usage and revenue metrics, and manage the API keys those endpoints require
 
 ## Limitations
 

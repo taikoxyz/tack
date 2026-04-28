@@ -1,6 +1,17 @@
 import type { Context, Next, MiddlewareHandler } from 'hono';
 import { extractPaymentAuthorizationCredential } from './http.js';
+import { usdToAssetAmount } from './pricing.js';
 import type { PaymentResult } from './types.js';
+
+export interface MppChainContext {
+  chainId: number;
+  assetAddress: string;
+  assetDecimals: number;
+  /** Convert atomic amount string to USD. */
+  atomicToUsd: (amountAtomic: string) => number;
+  /** Decide endpoint from request path. */
+  endpointFor: (path: string) => 'pin' | 'retrieval';
+}
 
 export interface MppPaymentRequirement {
   amount: string;
@@ -38,6 +49,7 @@ interface MppPaymentMiddlewareConfig {
   mppx: MppxChargeHandler;
   requirementFn: (c: Context) => MppPaymentRequirement | null | Promise<MppPaymentRequirement | null>;
   resolveVerifiedPayer: ResolveVerifiedPayer;
+  chainContext: MppChainContext;
   /** Optional logger hook for payer-resolution failures. */
   onPayerResolutionFailure?: (error: unknown, request: Request) => void;
 }
@@ -61,7 +73,7 @@ function payerResolutionFailedResponse(): Response {
 }
 
 export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): MiddlewareHandler {
-  const { mppx, requirementFn, resolveVerifiedPayer, onPayerResolutionFailure } = config;
+  const { mppx, requirementFn, resolveVerifiedPayer, chainContext, onPayerResolutionFailure } = config;
 
   return async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
@@ -100,10 +112,25 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
       return payerResolutionFailedResponse();
     }
 
+    // requirement.amount is a decimal USD string (e.g. "0.001"). Convert
+    // to atomic units via the canonical helper so MPP and x402 produce the
+    // same `amount_atomic` for identical USD inputs at boundary amounts
+    // (Number.EPSILON guard + minimum-of-1 floor).
+    const usdAmount = Number(requirement.amount);
+    const atomicAmount = Number.isFinite(usdAmount)
+      ? usdToAssetAmount(usdAmount, chainContext.assetAddress, chainContext.assetDecimals).amount
+      : '0';
+
     c.set('paymentResult' as any, {
       wallet,
       protocol: 'mpp',
       chainName: 'tempo',
+      chainId: chainContext.chainId,
+      assetAddress: chainContext.assetAddress,
+      assetDecimals: chainContext.assetDecimals,
+      amountAtomic: atomicAmount,
+      amountUsd: Number.isFinite(usdAmount) ? usdAmount : 0,
+      endpoint: chainContext.endpointFor(c.req.path),
     } satisfies PaymentResult);
 
     await next();

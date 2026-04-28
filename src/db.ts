@@ -42,5 +42,54 @@ export function createDb(dbPath: string): Database.Database {
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_pins_expires_at ON pins(expires_at)');
 
+  // Usage metrics: payments raw event log
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id              TEXT PRIMARY KEY,
+      occurred_at     TEXT NOT NULL,
+      protocol        TEXT NOT NULL CHECK(protocol IN ('x402', 'mpp')),
+      chain_id        INTEGER NOT NULL,
+      payer_wallet    TEXT NOT NULL,
+      asset_address   TEXT NOT NULL,
+      asset_decimals  INTEGER NOT NULL,
+      amount_atomic   TEXT NOT NULL,
+      amount_usd      REAL NOT NULL,
+      endpoint        TEXT NOT NULL CHECK(endpoint IN ('pin', 'retrieval')),
+      request_id      TEXT,
+      tx_hash         TEXT,
+      pin_request_id  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payments_occurred_at ON payments(occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_payments_payer_occurred ON payments(payer_wallet, occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_payments_protocol ON payments(protocol);
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_payments_protocol_txhash
+      ON payments(protocol, tx_hash) WHERE tx_hash IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS request_metrics_daily (
+      day     TEXT NOT NULL,
+      bucket  TEXT NOT NULL,
+      count   INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, bucket)
+    );
+
+    CREATE TABLE IF NOT EXISTS usage_api_keys (
+      id           TEXT PRIMARY KEY,
+      name         TEXT NOT NULL UNIQUE,
+      key_hash     TEXT NOT NULL UNIQUE,
+      created_at   TEXT NOT NULL,
+      last_used_at TEXT,
+      revoked_at   TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_api_keys_revoked_at ON usage_api_keys(revoked_at);
+  `);
+
+  // Usage metrics: pin size column
+  if (!columns.some((col) => col.name === 'size_bytes')) {
+    db.exec('ALTER TABLE pins ADD COLUMN size_bytes INTEGER');
+  }
+  // idx_pins_size_bytes intentionally omitted: no query filters by size_bytes alone (only SUM)
+
   return db;
 }

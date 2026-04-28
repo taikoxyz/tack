@@ -15,6 +15,7 @@ export interface CreatePinInput {
   meta?: Record<string, string>;
   owner: string;
   durationMonths?: number;
+  sizeBytes?: number;
 }
 
 export interface ReplacePinInput {
@@ -139,7 +140,8 @@ export class PinningService {
       owner: input.owner,
       created: now,
       updated: now,
-      expires_at: computeExpiresAt(input.durationMonths)
+      expires_at: computeExpiresAt(input.durationMonths),
+      size_bytes: typeof input.sizeBytes === 'number' && input.sizeBytes > 0 ? input.sizeBytes : null
     };
 
     this.repository.create(record);
@@ -204,7 +206,8 @@ export class PinningService {
       status: 'pinning',
       info: {},
       updated: new Date().toISOString(),
-      expires_at: existing.expires_at
+      expires_at: existing.expires_at,
+      size_bytes: input.cid === existing.cid ? existing.size_bytes : null
     };
 
     this.repository.update(requestid, next);
@@ -401,8 +404,9 @@ export class PinningService {
     };
   }
 
-  async uploadContent(content: Blob, filename: string): Promise<string> {
-    return this.ipfsClient.addContent(content, filename);
+  async uploadContent(content: Blob, filename: string): Promise<{ cid: string; size: number }> {
+    const { hash: cid, size } = await this.ipfsClient.addContent(content, filename);
+    return { cid, size };
   }
 
   async getContent(cid: string): Promise<GatewayContentResult> {
