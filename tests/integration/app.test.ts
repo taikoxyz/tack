@@ -510,6 +510,17 @@ describe('API integration', () => {
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
+  it('advertises and serves a favicon', async () => {
+    const landing = await app.request('http://localhost/');
+    expect(landing.status).toBe(200);
+    expect(await landing.text()).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml" />');
+
+    const favicon = await app.request('http://localhost/favicon.svg');
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get('content-type')).toBe('image/svg+xml; charset=utf-8');
+    expect(await favicon.text()).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+  });
+
   it('serves an AgentCard endpoint', async () => {
     const response = await app.request('http://localhost/.well-known/agent.json');
     expect(response.status).toBe(200);

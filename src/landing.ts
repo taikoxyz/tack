@@ -1,5 +1,13 @@
 const PROD_URL = process.env.LANDING_URL ?? 'https://tack.taiko.xyz';
 
+export const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#050912"/>
+  <rect x="14" y="14" width="36" height="14" rx="3" fill="none" stroke="#e81899" stroke-width="4"/>
+  <rect x="14" y="36" width="36" height="14" rx="3" fill="none" stroke="#7c3aed" stroke-width="4"/>
+  <circle cx="23" cy="21" r="2" fill="#f3f3f3"/>
+  <circle cx="23" cy="43" r="2" fill="#f3f3f3"/>
+</svg>`;
+
 export function landingPageHtml(): string {
   const o = PROD_URL;
   return `<!DOCTYPE html>
@@ -10,6 +18,7 @@ export function landingPageHtml(): string {
   <title>Tack — Agent-native IPFS. Pay on Taiko or Tempo.</title>
   <meta name="description" content="IPFS pinning and retrieval for AI agents. No API keys, no accounts. Pay per use with USDC on Taiko (x402) or USDC.e on Tempo (MPP)." />
   <meta name="theme-color" content="#050912" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Tack — Agent-native IPFS. Pay on Taiko or Tempo." />

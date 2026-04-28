@@ -26,7 +26,7 @@ import {
   type WalletAuthConfig
 } from './services/x402';
 import type { PinStatusValue } from './types';
-import { landingPageHtml } from './landing';
+import { faviconSvg, landingPageHtml } from './landing';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
@@ -418,6 +418,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
   app.get('/', (c) => {
     return c.html(landingPageHtml());
+  });
+
+  app.get('/favicon.svg', (c) => {
+    return c.body(faviconSvg, 200, {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400'
+    });
   });
 
   app.use('*', async (c, next) => {
