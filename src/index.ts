@@ -124,11 +124,16 @@ const tempoViemChain = mppTestnet ? tempoModerato : tempo;
 // lookups at the wrong chain and turn every successful testnet charge
 // into a 500 during payer resolution.
 const tempoRpcUrl = config.mppTempoRpcUrl ?? tempoViemChain.rpcUrls.default.http[0];
+// MPP realm must equal the origin host (no scheme, no path) so that
+// discovery validators (e.g. x402scan) can attribute on-chain Tempo
+// settlements back to this service. `publicBaseUrl` is a full origin
+// (`https://host`) — strip it down to the host component for the realm.
+const mppRealm = config.publicBaseUrl ? new URL(config.publicBaseUrl).host : undefined;
 const mppx = config.mppSecretKey
   ? createMppInstance({
       payTo: config.mppPayTo,
       secretKey: config.mppSecretKey,
-      realm: config.publicBaseUrl,
+      realm: mppRealm,
       testnet: mppTestnet,
     })
   : null;
