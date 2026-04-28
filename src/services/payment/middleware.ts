@@ -1,5 +1,6 @@
 import type { Context, Next, MiddlewareHandler } from 'hono';
 import { extractPaymentAuthorizationCredential } from './http.js';
+import { usdToAssetAmount } from './pricing.js';
 import type { PaymentResult } from './types.js';
 
 export interface MppChainContext {
@@ -112,11 +113,12 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
     }
 
     // requirement.amount is a decimal USD string (e.g. "0.001"). Convert
-    // to atomic units using the configured asset decimals so the column
-    // holds atomic-integer strings consistently across protocols.
+    // to atomic units via the canonical helper so MPP and x402 produce the
+    // same `amount_atomic` for identical USD inputs at boundary amounts
+    // (Number.EPSILON guard + minimum-of-1 floor).
     const usdAmount = Number(requirement.amount);
     const atomicAmount = Number.isFinite(usdAmount)
-      ? String(Math.round(usdAmount * 10 ** chainContext.assetDecimals))
+      ? usdToAssetAmount(usdAmount, chainContext.assetAddress, chainContext.assetDecimals).amount
       : '0';
 
     c.set('paymentResult' as any, {

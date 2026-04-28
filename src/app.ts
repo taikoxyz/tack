@@ -569,6 +569,34 @@ export function createApp(services: AppServices): Hono<AppEnv> {
         }
       }
 
+      // Record paymentResult on the error path too. MPP settles BEFORE the
+      // handler runs, so a paid request that throws still moved money on-chain
+      // and must be counted as `paid` and persisted to `payments`. x402 only
+      // sets paymentResult after a successful settle (gated on a 2xx handler
+      // response), so it is naturally absent here.
+      const errorPaymentResult = c.get('paymentResult');
+
+      if (errorPaymentResult) {
+        if (services.metricsRepository) {
+          try {
+            services.metricsRepository.increment(day, 'paid');
+          } catch (err) {
+            logger.warn({ err, requestId }, 'paid metric increment failed (error path)');
+          }
+        }
+        if (services.paymentRecorder) {
+          try {
+            const pinRequestId = c.get('pinRequestIdForUsage');
+            services.paymentRecorder.record(errorPaymentResult, {
+              requestId,
+              pinRequestId,
+            });
+          } catch (err) {
+            logger.error({ err, requestId }, 'payment recorder threw unexpectedly (error path)');
+          }
+        }
+      }
+
       logger.error({
         requestId,
         method: c.req.method,
