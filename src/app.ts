@@ -27,8 +27,15 @@ import {
 } from './services/x402';
 import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromPinPayload } from './services/payment/pricing';
 import type { AgentCardConfig, PinStatusValue } from './types';
-import { landingPageHtml } from './landing';
-import { buildOpenApiDocument } from './openapi';
+import { faviconSvg, landingPageHtml } from './landing';
+import {
+  buildOpenApiDocument,
+  PIN_INPUT_SCHEMA,
+  PIN_LIST_SCHEMA,
+  PIN_STATUS_SCHEMA,
+  UPLOAD_INPUT_SCHEMA,
+  UPLOAD_OUTPUT_SCHEMA
+} from './openapi';
 import type { UsageMetricsService, UsageSummary, UsageWindowInput } from './services/usage/usage-service';
 import type { UsageApiKeyRepository } from './repositories/usage-api-key-repository';
 
@@ -458,6 +465,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     return c.html(landingPageHtml());
   });
 
+  app.get('/favicon.svg', (c) => {
+    return c.body(faviconSvg, 200, {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400'
+    });
+  });
+
   app.use('*', async (c, next) => {
     const requestId = c.req.header('x-request-id') ?? randomUUID();
     const requestPath = new URL(c.req.url).pathname;
@@ -642,7 +656,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   }
 
   app.get('/llms.txt', (c) => {
-    const base = publicBaseUrl ?? 'https://tack.taiko.xyz';
+    const base = publicBaseUrl ?? 'https://tack.inferenceroom.ai';
     const agent = services.agentCard;
     const rate = agent?.x402RatePerGbMonthUsd;
     const minPrice = agent?.x402MinPriceUsd;
@@ -800,14 +814,113 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       name: agent?.name ?? 'Tack',
       description: agent?.description ?? 'Pin to IPFS, pay with your wallet. No account needed.',
       endpoint: origin,
+      openapi: '/openapi.json',
       capabilities: {
         pinningApi: {
           spec: 'IPFS Pinning Service API',
-          endpoints: ['/pins', '/pins/:requestid', '/upload']
+          endpoints: ['/pins', '/pins/:requestid', '/upload'],
+          routes: [
+            {
+              path: '/pins',
+              method: 'POST',
+              description: 'Pin content by CID. Requires payment.',
+              inputSchema: PIN_INPUT_SCHEMA,
+              outputSchema: PIN_STATUS_SCHEMA
+            },
+            {
+              path: '/pins',
+              method: 'GET',
+              description: 'List pins owned by the authenticated wallet.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  cid: { type: 'string' },
+                  name: { type: 'string' },
+                  status: { type: 'string', enum: ['queued', 'pinning', 'pinned', 'failed'] },
+                  before: { type: 'string', format: 'date-time' },
+                  after: { type: 'string', format: 'date-time' },
+                  limit: { type: 'integer', minimum: 1, maximum: 1000 },
+                  offset: { type: 'integer', minimum: 0 }
+                }
+              },
+              outputSchema: PIN_LIST_SCHEMA
+            },
+            {
+              path: '/pins/:requestid',
+              method: 'GET',
+              description: 'Get a specific pin by request ID.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                required: ['requestid'],
+                properties: { requestid: { type: 'string' } }
+              },
+              outputSchema: PIN_STATUS_SCHEMA
+            },
+            {
+              path: '/pins/:requestid',
+              method: 'POST',
+              description: 'Replace a pin. Requires payment.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                required: ['requestid', 'cid'],
+                properties: {
+                  requestid: { type: 'string' },
+                  ...PIN_INPUT_SCHEMA.properties
+                }
+              },
+              outputSchema: PIN_STATUS_SCHEMA
+            },
+            {
+              path: '/pins/:requestid',
+              method: 'DELETE',
+              description: 'Delete a pin.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                required: ['requestid'],
+                properties: { requestid: { type: 'string' } }
+              },
+              outputSchema: {
+                type: 'object',
+                description: 'Empty 202 response on success.'
+              }
+            },
+            {
+              path: '/upload',
+              method: 'POST',
+              description: 'Upload a file (multipart) and pin it. Requires payment.',
+              contentType: 'multipart/form-data',
+              inputSchema: UPLOAD_INPUT_SCHEMA,
+              outputSchema: UPLOAD_OUTPUT_SCHEMA
+            }
+          ]
         },
         gateway: {
           endpoint: '/ipfs/:cid',
-          supports: ['etag', 'range', 'cache-control', 'optional-paywall']
+          supports: ['etag', 'range', 'cache-control', 'optional-paywall'],
+          routes: [
+            {
+              path: '/ipfs/:cid',
+              method: 'GET',
+              description:
+                'Retrieve content by CID. Free by default; owner-attached paywall returns 402 with a runtime challenge.',
+              inputSchema: {
+                type: 'object',
+                required: ['cid'],
+                properties: {
+                  cid: { type: 'string', description: 'IPFS CID to retrieve' }
+                }
+              },
+              outputSchema: {
+                description: 'Raw content bytes. Content-Type is detected from the payload.',
+                type: 'string',
+                format: 'binary'
+              }
+            }
+          ]
         },
         usage: {
           endpoints: ['/usage/summary', '/usage/revenue', '/usage/requests', '/usage/pins', '/usage/wallets'],

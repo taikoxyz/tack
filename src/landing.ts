@@ -1,4 +1,10 @@
-const PROD_URL = process.env.LANDING_URL ?? 'https://tack.taiko.xyz';
+const PROD_URL = process.env.LANDING_URL ?? 'https://tack.inferenceroom.ai';
+
+export const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <rect width="128" height="64" rx="10" fill="#05070d"/>
+  <path d="M23 14 12 50" stroke="#e81899" stroke-width="5" stroke-linecap="round"/>
+  <text x="33" y="42" fill="#f3f3f3" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" font-weight="700" letter-spacing="0">tack</text>
+</svg>`;
 
 export function landingPageHtml(): string {
   const o = PROD_URL;
@@ -10,6 +16,7 @@ export function landingPageHtml(): string {
   <title>Tack — Storage for agents.</title>
   <meta name="description" content="IPFS pinning your autonomous agent calls directly. Pay-per-pin in USDC, no accounts, no API keys. Live on Taiko, Base, and Tempo." />
   <meta name="theme-color" content="#05070d" />
+  <link rel="icon" href="/favicon.svg?v=tack-wordmark-20260428" type="image/svg+xml" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Tack — Storage for agents." />
@@ -20,8 +27,6 @@ export function landingPageHtml(): string {
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Tack — Storage for agents." />
   <meta name="twitter:description" content="A place for your agent to keep things. IPFS pinning it calls directly — pay-per-pin, no API keys." />
-
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzBhMGQxNyIvPjxwYXRoIGQ9Ik0yMSA1IEgxNyBMMTEgMjcgSDE1IFoiIGZpbGw9IiNlODE4OTkiLz48L3N2Zz4K" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
