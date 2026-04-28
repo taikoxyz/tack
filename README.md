@@ -50,11 +50,6 @@ Implements the [IPFS Pinning Service API](https://ipfs.github.io/pinning-service
 | `POST` | `/pins/:requestid` | Wallet identity | Replace a pin |
 | `DELETE` | `/pins/:requestid` | Wallet identity | Delete a pin |
 | `GET` | `/ipfs/:cid` | None | Retrieve content (supports ETag, Range) |
-| `GET` | `/usage/summary` | Usage API key | Usage + revenue summary |
-| `GET` | `/usage/revenue` | Usage API key | Revenue metrics only |
-| `GET` | `/usage/requests` | Usage API key | Request counters only |
-| `GET` | `/usage/pins` | Usage API key | Pin count and byte metrics only |
-| `GET` | `/usage/wallets` | Usage API key | Paying wallet metrics only |
 | `GET` | `/health` | None | Service health check |
 | `GET` | `/.well-known/agent.json` | None | A2A agent discovery |
 
@@ -66,11 +61,14 @@ Implements the [IPFS Pinning Service API](https://ipfs.github.io/pinning-service
 
 **Retrieval pricing**: `meta.retrievalPrice` is controlled by the first wallet that pins a CID through Tack. Later pins of the same CID cannot redirect premium retrieval payouts.
 
-**Usage API**: operator metrics are exposed through `/usage/*` endpoints and require an active key from the `usage_api_keys` table via `X-API-Key: <key>` or `Authorization: Bearer <key>`. Query windows use UTC days: `?start=2026-04-21&end=2026-04-28`, where `end` is exclusive. If omitted, the window defaults to the last seven UTC days including today. Create, import, list, and revoke keys with `pnpm usage:key`.
-
 ## For AI Agents
 
 Tack exposes an [A2A](https://google.github.io/A2A/) agent card at `/.well-known/agent.json`. An agent with a wallet can discover Tack, pin content, and pay — no human in the loop.
+
+The repo ships [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) under `skills/` so coding agents can pick up Tack without reading the source:
+
+- [`skills/tack-pinning`](skills/tack-pinning/SKILL.md) — pin a CID, upload a file, retrieve content, manage pins, gate retrieval behind a paywall
+- [`skills/tack-usage-api`](skills/tack-usage-api/SKILL.md) — operator-only: read service-level usage and revenue metrics, and manage the API keys those endpoints require
 
 ## Limitations
 

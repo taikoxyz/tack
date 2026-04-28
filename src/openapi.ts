@@ -131,7 +131,6 @@ function buildGuidance(input: BuildOpenApiInput): string {
     pricingLine,
     `Uploads are capped at ${Math.floor(input.uploadMaxSizeBytes / (1024 * 1024))}MB. POST /pins takes a CID; POST /upload takes a multipart file.`,
     'Retrieval via GET /ipfs/:cid is free by default. Owners may set a paywall via meta.retrievalPrice when creating the pin — paywalled CIDs return 402 with a runtime challenge.',
-    'Operator usage and revenue metrics are available at GET /usage/summary, /usage/revenue, /usage/requests, /usage/pins, and /usage/wallets. These routes require an active usage API key via X-API-Key or Authorization: Bearer.',
     'Conforms to the IPFS Pinning Service API (https://ipfs.github.io/pinning-services-api-spec/).'
   ].join(' ');
 }
@@ -214,23 +213,6 @@ const PIN_STATUS_RESPONSE = {
   }
 } as const;
 
-const USAGE_WINDOW_PARAMETERS = [
-  {
-    name: 'start',
-    in: 'query',
-    required: false,
-    description: 'UTC start day, inclusive (YYYY-MM-DD). Defaults to six days before today.',
-    schema: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
-  },
-  {
-    name: 'end',
-    in: 'query',
-    required: false,
-    description: 'UTC end day, exclusive (YYYY-MM-DD). Defaults to tomorrow.',
-    schema: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
-  }
-] as const;
-
 export function buildOpenApiDocument(input: BuildOpenApiInput): Record<string, unknown> {
   const { baseUrl, agentCard, uploadMaxSizeBytes } = input;
   const guidance = buildGuidance(input);
@@ -270,8 +252,7 @@ export function buildOpenApiDocument(input: BuildOpenApiInput): Record<string, u
     tags: [
       { name: 'Pins', description: 'Pin lifecycle (IPFS Pinning Service API)' },
       { name: 'Upload', description: 'Direct file upload + pin' },
-      { name: 'Gateway', description: 'IPFS content retrieval' },
-      { name: 'Usage', description: 'Operator usage and revenue metrics' }
+      { name: 'Gateway', description: 'IPFS content retrieval' }
     ],
     paths: {
       '/pins': {
@@ -431,76 +412,6 @@ export function buildOpenApiDocument(input: BuildOpenApiInput): Record<string, u
           }
         }
       },
-      '/usage/summary': {
-        get: {
-          operationId: 'getUsageSummary',
-          summary: 'Get usage and revenue metrics',
-          tags: ['Usage'],
-          security: [{ usageApiKey: [] }],
-          parameters: USAGE_WINDOW_PARAMETERS,
-          responses: {
-            '200': { description: 'Usage summary with revenue, requests, pins, and wallet metrics' },
-            '400': { description: 'Invalid usage window' },
-            '401': { description: 'Missing or invalid usage API key' }
-          }
-        }
-      },
-      '/usage/revenue': {
-        get: {
-          operationId: 'getUsageRevenue',
-          summary: 'Get revenue metrics',
-          tags: ['Usage'],
-          security: [{ usageApiKey: [] }],
-          parameters: USAGE_WINDOW_PARAMETERS,
-          responses: {
-            '200': { description: 'Revenue metrics for the requested window' },
-            '400': { description: 'Invalid usage window' },
-            '401': { description: 'Missing or invalid usage API key' }
-          }
-        }
-      },
-      '/usage/requests': {
-        get: {
-          operationId: 'getUsageRequests',
-          summary: 'Get request metrics',
-          tags: ['Usage'],
-          security: [{ usageApiKey: [] }],
-          parameters: USAGE_WINDOW_PARAMETERS,
-          responses: {
-            '200': { description: 'Request counters for the requested window' },
-            '400': { description: 'Invalid usage window' },
-            '401': { description: 'Missing or invalid usage API key' }
-          }
-        }
-      },
-      '/usage/pins': {
-        get: {
-          operationId: 'getUsagePins',
-          summary: 'Get pin usage metrics',
-          tags: ['Usage'],
-          security: [{ usageApiKey: [] }],
-          parameters: USAGE_WINDOW_PARAMETERS,
-          responses: {
-            '200': { description: 'Pin counts and byte totals for the requested window' },
-            '400': { description: 'Invalid usage window' },
-            '401': { description: 'Missing or invalid usage API key' }
-          }
-        }
-      },
-      '/usage/wallets': {
-        get: {
-          operationId: 'getUsageWallets',
-          summary: 'Get paying wallet metrics',
-          tags: ['Usage'],
-          security: [{ usageApiKey: [] }],
-          parameters: USAGE_WINDOW_PARAMETERS,
-          responses: {
-            '200': { description: 'Paying wallet counts for the requested window' },
-            '400': { description: 'Invalid usage window' },
-            '401': { description: 'Missing or invalid usage API key' }
-          }
-        }
-      },
     },
     components: {
       securitySchemes: {
@@ -514,13 +425,6 @@ export function buildOpenApiDocument(input: BuildOpenApiInput): Record<string, u
           name: 'Authorization',
           description:
             'Short-lived bearer token (`Bearer <token>`) issued in the x-wallet-auth-token response header after a successful payment. Required for owner endpoints (GET /pins, GET/POST/DELETE /pins/:requestid).'
-        },
-        usageApiKey: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'X-API-Key',
-          description:
-            'Active operator API key from the usage_api_keys table. Usage endpoints also accept `Authorization: Bearer <key>`.'
         }
       }
     }

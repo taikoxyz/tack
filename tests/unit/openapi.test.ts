@@ -185,18 +185,18 @@ describe('buildOpenApiDocument', () => {
     expect(scheme.name).toBe('Authorization');
   });
 
-  it('documents usage endpoints behind the usageApiKey scheme', () => {
+  it('does not advertise operator usage endpoints in the public spec', () => {
     const doc = buildOpenApiDocument({ ...baseInput, agentCard: baseAgent });
-    const paths = doc.paths as Record<string, Record<string, Record<string, unknown>>>;
-    expect(paths['/usage/summary'].get.security).toEqual([{ usageApiKey: [] }]);
-    expect(paths['/usage/revenue'].get.parameters).toEqual(paths['/usage/summary'].get.parameters);
-    const components = doc.components as Record<string, Record<string, Record<string, unknown>>>;
-    const scheme = components.securitySchemes.usageApiKey;
-    expect(scheme).toMatchObject({
-      type: 'apiKey',
-      in: 'header',
-      name: 'X-API-Key',
-    });
+    const paths = doc.paths as Record<string, unknown>;
+    for (const path of ['/usage/summary', '/usage/revenue', '/usage/requests', '/usage/pins', '/usage/wallets']) {
+      expect(paths[path]).toBeUndefined();
+    }
+    const components = doc.components as Record<string, Record<string, unknown>>;
+    expect(components.securitySchemes.usageApiKey).toBeUndefined();
+    const tagNames = (doc.tags as Array<{ name: string }>).map((t) => t.name);
+    expect(tagNames).not.toContain('Usage');
+    const guidance = (doc.info as Record<string, unknown>)['x-guidance'] as string;
+    expect(guidance).not.toContain('/usage/');
   });
 
   it('falls back to a generic guidance line when agentCard is omitted', () => {

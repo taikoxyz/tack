@@ -724,14 +724,6 @@ ${protocolsBlock}
 - POST /pins/:requestid — Replace a pin. Same body as POST /pins.
 - DELETE /pins/:requestid — Delete a pin.
 
-### Usage (operator API key required)
-
-- GET /usage/summary — Revenue, request, pin, and wallet metrics. Query: start=YYYY-MM-DD, end=YYYY-MM-DD (exclusive).
-- GET /usage/revenue — Revenue metrics only.
-- GET /usage/requests — Request counters only.
-- GET /usage/pins — Pin counts and bytes only.
-- GET /usage/wallets — Paying wallet metrics only.
-
 ## Pinning Service API
 
 Conforms to the IPFS Pinning Service API spec: https://ipfs.github.io/pinning-services-api-spec/
@@ -922,10 +914,6 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
             }
           ]
         },
-        usage: {
-          endpoints: ['/usage/summary', '/usage/revenue', '/usage/requests', '/usage/pins', '/usage/wallets'],
-          auth: 'active usage API key via X-API-Key or Authorization: Bearer'
-        }
       },
       payments: {
         protocols,
