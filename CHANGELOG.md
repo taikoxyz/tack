@@ -9,6 +9,11 @@ Format:
 
 ## [Unreleased]
 
+## [v0.2.6] - 2026-04-29
+
+### Fixed
+- x402 paid endpoints now also expose an `output` block in the bazaar discovery extension. The bazaar resource-service factory only emits the output info + schema when `output.example` is provided (passing `output.schema` alone is silently dropped), so v0.2.5 shipped input schemas only. v0.2.6 adds representative examples for `POST /pins` (PinStatus) and `POST /upload` (`{cid}`), and the live `payment-required` challenge now carries `extensions.bazaar.info.output` and `extensions.bazaar.schema.properties.output`. mppscan / x402scan should no longer flag output schema missing.
+
 ## [v0.2.5] - 2026-04-29
 
 ### Fixed
