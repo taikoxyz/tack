@@ -20,6 +20,7 @@ Format:
 - `paymentResult.chainName` for x402 now emits human-readable names (`'taiko'`, `'base'`) instead of the raw `eip155:N` identifier, matching the MPP middleware's `chainName: 'tempo'` contract. Falls back to the raw network identifier for unknown chainIds.
 
 ### Fixed
+- x402 paid endpoints (`POST /pins`, `POST /upload`) now declare `inputSchema` and `outputSchema` via the Bazaar discovery extension, so the resulting v2 `payment-required` challenge carries per-route schemas. x402scan / Bazaar discovery validators previously flagged both endpoints as "Input schema is missing" / "Output schema is missing".
 - MPP charges that settle on-chain but whose handler later returns non-2xx (or throws) are now correctly recorded in the `payments` table and counted in `requests.paid`. Previously the success-path 2xx gate dropped them, causing revenue under-reporting on server-error executions.
 - `/usage/*` requests no longer increment the `total` / `paid` / `rejected_402` counters, so a polling dashboard can no longer inflate the very metrics it reads.
 - Usage API errors are now classified correctly: only window-validation errors return `400 bad_request`; SQLite or other runtime faults propagate as `500` instead of being misreported as client errors with raw error messages leaked.
