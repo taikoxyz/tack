@@ -28,10 +28,19 @@ import {
   type WalletAuthConfig
 } from './services/x402';
 import type { WalletLoginService } from './services/wallet-login';
-import { formatPinningPriceFormula } from './services/payment/pricing';
+import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromPinPayload } from './services/payment/pricing';
 import type { AgentCardConfig, PinStatusValue } from './types';
-import { landingPageHtml } from './landing';
-import { buildOpenApiDocument } from './openapi';
+import { faviconSvg, landingPageHtml } from './landing';
+import {
+  buildOpenApiDocument,
+  PIN_INPUT_SCHEMA,
+  PIN_LIST_SCHEMA,
+  PIN_STATUS_SCHEMA,
+  UPLOAD_INPUT_SCHEMA,
+  UPLOAD_OUTPUT_SCHEMA
+} from './openapi';
+import { UsageWindowError, type UsageMetricsService, type UsageSummary, type UsageWindowInput } from './services/usage/usage-service';
+import type { UsageApiKeyRepository } from './repositories/usage-api-key-repository';
 
 const DEFAULT_GATEWAY_CACHE_CONTROL_MAX_AGE_SECONDS = 31536000;
 const DEFAULT_UPLOAD_MAX_SIZE_BYTES = 100 * 1024 * 1024;
@@ -277,6 +286,46 @@ async function parsePrivateObjectUpload(c: {
   };
 }
 
+function extractUsageApiKey(headers: Headers): string | null {
+  const direct = headers.get('x-api-key');
+  if (direct && direct.trim().length > 0) {
+    return direct.trim();
+  }
+
+  const auth = headers.get('authorization');
+  if (!auth) {
+    return null;
+  }
+
+  const match = /^bearer\s+(.+)$/i.exec(auth.trim());
+  return match?.[1]?.trim() || null;
+}
+
+function authenticateUsageApiKey(headers: Headers, usageApiKeys: UsageApiKeyRepository): boolean {
+  const provided = extractUsageApiKey(headers);
+  return Boolean(provided && usageApiKeys.authenticate(provided));
+}
+
+function usageUnauthorizedResponse(): Response {
+  return Response.json(
+    {
+      error: 'unauthorized',
+      message: 'valid usage API key is required',
+    },
+    {
+      status: 401,
+      headers: { 'Cache-Control': 'no-store' },
+    }
+  );
+}
+
+function parseUsageWindow(searchParams: URLSearchParams): UsageWindowInput {
+  return {
+    startDay: searchParams.get('start') ?? undefined,
+    endDayExclusive: searchParams.get('end') ?? undefined,
+  };
+}
+
 async function parseJsonBody(c: { req: { json: () => Promise<unknown> } }): Promise<unknown> {
   try {
     return await c.req.json();
@@ -465,6 +514,10 @@ function statusFromError(error: unknown): number {
   return 500;
 }
 
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export type { AgentCardConfig, AgentCardX402Chain } from './types';
 
 export interface AppServices {
@@ -486,6 +539,10 @@ export interface AppServices {
   agentCard?: AgentCardConfig;
   defaultDurationMonths?: number;
   maxDurationMonths?: number;
+  paymentRecorder?: import('./services/usage/payment-recorder.js').PaymentRecorder;
+  metricsRepository?: import('./repositories/metrics-repository.js').MetricsRepository;
+  usageMetrics?: UsageMetricsService;
+  usageApiKeys?: UsageApiKeyRepository;
 }
 
 interface AppEnv {
@@ -502,6 +559,7 @@ interface AppEnv {
     walletAuthError: string | null;
     paymentResult?: import('./services/payment/types.js').PaymentResult;
     paymentSettlementCallbacks?: import('./services/payment/types.js').PaymentSettlementCallbacks[];
+    pinRequestIdForUsage?: string;
   };
 }
 
@@ -522,6 +580,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
 
   app.get('/', (c) => {
     return c.html(landingPageHtml());
+  });
+
+  app.get('/favicon.svg', (c) => {
+    return c.body(faviconSvg, 200, {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400'
+    });
   });
 
   app.use('*', async (c, next) => {
@@ -549,20 +614,111 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       }
 
       await next();
+
+      // Usage metrics: counters + payment recording. Pure side effects; never throw.
+      // Operator metrics endpoints (/usage/*) are excluded so a polling dashboard
+      // can't inflate the very counters it reads (self-referential metrics loop).
+      const status = c.res.status;
+      const day = utcDay();
+      const isOperatorMetricsRequest = requestPath.startsWith('/usage/');
+
+      if (services.metricsRepository && !isOperatorMetricsRequest) {
+        try {
+          services.metricsRepository.increment(day, 'total');
+          if (status === 402) {
+            services.metricsRepository.increment(day, 'rejected_402');
+          }
+        } catch (err) {
+          logger.warn({ err, requestId }, 'metrics increment failed');
+        }
+      }
+
+      const paymentResult = c.get('paymentResult');
+
+      // MPP settles before the handler runs, so a paid request that later returns
+      // a non-2xx response still moved money on-chain. x402 only sets
+      // paymentResult after a successful settle, which is itself gated on a 2xx
+      // handler response, so the no-status-gate condition is equivalent for x402
+      // but fixes under-reporting for MPP (and for paywalled retrievals that
+      // legitimately return 304).
+      if (paymentResult) {
+        if (services.metricsRepository) {
+          try {
+            services.metricsRepository.increment(day, 'paid');
+          } catch (err) {
+            logger.warn({ err, requestId }, 'paid metric increment failed');
+          }
+        }
+        if (services.paymentRecorder) {
+          try {
+            const pinRequestId = c.get('pinRequestIdForUsage');
+            services.paymentRecorder.record(paymentResult, {
+              requestId,
+              pinRequestId,
+            });
+          } catch (err) {
+            logger.error({ err, requestId }, 'payment recorder threw unexpectedly');
+          }
+        }
+      }
+
       logger.info({
         requestId,
         method: c.req.method,
         path: requestPath,
-        status: c.res.status,
+        status,
         durationMs: Date.now() - requestStartedAt,
         walletAddress: identity.wallet,
       }, 'request handled');
     } catch (error) {
+      const errorStatus = statusFromError(error);
+      const day = utcDay();
+      const isOperatorMetricsRequest = requestPath.startsWith('/usage/');
+
+      if (services.metricsRepository && !isOperatorMetricsRequest) {
+        try {
+          services.metricsRepository.increment(day, 'total');
+          if (errorStatus === 402) {
+            services.metricsRepository.increment(day, 'rejected_402');
+          }
+        } catch (err) {
+          logger.warn({ err, requestId }, 'metrics increment failed (error path)');
+        }
+      }
+
+      // Record paymentResult on the error path too. MPP settles BEFORE the
+      // handler runs, so a paid request that throws still moved money on-chain
+      // and must be counted as `paid` and persisted to `payments`. x402 only
+      // sets paymentResult after a successful settle (gated on a 2xx handler
+      // response), so it is naturally absent here.
+      const errorPaymentResult = c.get('paymentResult');
+
+      if (errorPaymentResult) {
+        if (services.metricsRepository) {
+          try {
+            services.metricsRepository.increment(day, 'paid');
+          } catch (err) {
+            logger.warn({ err, requestId }, 'paid metric increment failed (error path)');
+          }
+        }
+        if (services.paymentRecorder) {
+          try {
+            const pinRequestId = c.get('pinRequestIdForUsage');
+            services.paymentRecorder.record(errorPaymentResult, {
+              requestId,
+              pinRequestId,
+            });
+          } catch (err) {
+            logger.error({ err, requestId }, 'payment recorder threw unexpectedly (error path)');
+          }
+        }
+      }
+
       logger.error({
         requestId,
         method: c.req.method,
         path: requestPath,
-        status: statusFromError(error),
+        status: errorStatus,
         durationMs: Date.now() - requestStartedAt,
         walletAddress: identity.wallet,
         err: error
@@ -617,8 +773,70 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     return c.json(document, 200, { 'Cache-Control': 'public, max-age=3600' });
   });
 
+  if (services.usageMetrics && services.usageApiKeys) {
+    const usagePayload = (c: Context<AppEnv>) => {
+      const summary = services.usageMetrics!.summary(parseUsageWindow(new URL(c.req.url).searchParams));
+      c.header('Cache-Control', 'no-store');
+      return summary;
+    };
+
+    const usageBadRequest = (c: Context<AppEnv>, err: UsageWindowError) => c.json(
+      {
+        error: 'bad_request',
+        message: err.message,
+      },
+      400,
+      { 'Cache-Control': 'no-store' }
+    );
+
+    const usageRoute = (select: (summary: UsageSummary) => unknown) => (c: Context<AppEnv>) => {
+      try {
+        return c.json(select(usagePayload(c)));
+      } catch (err) {
+        // Only window-validation errors map to 400. Database / runtime errors
+        // propagate so the global error handler can return 500 — otherwise an
+        // SQLite outage is silently misreported as a client error and its raw
+        // message is leaked.
+        if (err instanceof UsageWindowError) {
+          return usageBadRequest(c, err);
+        }
+        throw err;
+      }
+    };
+
+    app.use('/usage/*', async (c, next) => {
+      if (!authenticateUsageApiKey(c.req.raw.headers, services.usageApiKeys!)) {
+        return usageUnauthorizedResponse();
+      }
+
+      await next();
+    });
+
+    app.get('/usage/summary', usageRoute((summary) => summary));
+    app.get('/usage/revenue', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      revenue: summary.revenue,
+    })));
+    app.get('/usage/requests', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      requests: summary.requests,
+    })));
+    app.get('/usage/pins', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      pins: summary.pins,
+    })));
+    app.get('/usage/wallets', usageRoute((summary) => ({
+      window: summary.window,
+      generatedAt: summary.generatedAt,
+      wallets: summary.wallets,
+    })));
+  }
+
   app.get('/llms.txt', (c) => {
-    const base = publicBaseUrl ?? 'https://tack.taiko.xyz';
+    const base = publicBaseUrl ?? 'https://tack.inferenceroom.ai';
     const agent = services.agentCard;
     const rate = agent?.x402RatePerGbMonthUsd;
     const minPrice = agent?.x402MinPriceUsd;
@@ -645,7 +863,7 @@ MPP (\`Authorization: Payment\`) is disabled on this deployment. Check GET /.wel
     const text = `\
 # Tack
 
-> IPFS pinning and content retrieval for agents. Pay with USDC on Taiko${mppEnabled ? ' or USDC.e on Tempo' : ''} — no accounts, no API keys.
+> IPFS pinning and content retrieval for agents. Pay with USDC on Taiko${mppEnabled ? ' or USDC.e on Tempo' : ''} — no accounts, no pinning API keys.
 
 ## Overview
 
@@ -673,7 +891,7 @@ ${protocolsBlock}
 ### Paid (payment required)
 
 - POST /pins — Pin content by CID. Body: { cid, name?, origins?, meta? }. Optional header: X-Pin-Duration-Months.
-- POST /upload — Upload a file (multipart/form-data, field "file", max ${uploadMaxMb}MB). Returns { cid }.
+- POST /upload — Upload a file (multipart/form-data, field "file", max ${uploadMaxMb}MB). Returns \{ cid, size \} — pass \`size\` back via the \`x-content-size-bytes\` header on a subsequent \`POST /pins\` so the pin record records the size.
 - POST /private/objects — Store a private object outside IPFS. Requires X-Content-Size-Bytes. Optional header: X-Storage-Duration-Months.
 - POST /private/objects/:objectId/renew — Extend private object retention. Requires owner token and payment.
 
@@ -827,14 +1045,113 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       name: agent?.name ?? 'Tack',
       description: agent?.description ?? 'Pin to IPFS, pay with your wallet. No account needed.',
       endpoint: origin,
+      openapi: '/openapi.json',
       capabilities: {
         pinningApi: {
           spec: 'IPFS Pinning Service API',
-          endpoints: ['/pins', '/pins/:requestid', '/upload']
+          endpoints: ['/pins', '/pins/:requestid', '/upload'],
+          routes: [
+            {
+              path: '/pins',
+              method: 'POST',
+              description: 'Pin content by CID. Requires payment.',
+              inputSchema: PIN_INPUT_SCHEMA,
+              outputSchema: PIN_STATUS_SCHEMA
+            },
+            {
+              path: '/pins',
+              method: 'GET',
+              description: 'List pins owned by the authenticated wallet.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  cid: { type: 'string' },
+                  name: { type: 'string' },
+                  status: { type: 'string', enum: ['queued', 'pinning', 'pinned', 'failed'] },
+                  before: { type: 'string', format: 'date-time' },
+                  after: { type: 'string', format: 'date-time' },
+                  limit: { type: 'integer', minimum: 1, maximum: 1000 },
+                  offset: { type: 'integer', minimum: 0 }
+                }
+              },
+              outputSchema: PIN_LIST_SCHEMA
+            },
+            {
+              path: '/pins/:requestid',
+              method: 'GET',
+              description: 'Get a specific pin by request ID.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                required: ['requestid'],
+                properties: { requestid: { type: 'string' } }
+              },
+              outputSchema: PIN_STATUS_SCHEMA
+            },
+            {
+              path: '/pins/:requestid',
+              method: 'POST',
+              description: 'Replace a pin. Requires payment.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                required: ['requestid', 'cid'],
+                properties: {
+                  requestid: { type: 'string' },
+                  ...PIN_INPUT_SCHEMA.properties
+                }
+              },
+              outputSchema: PIN_STATUS_SCHEMA
+            },
+            {
+              path: '/pins/:requestid',
+              method: 'DELETE',
+              description: 'Delete a pin.',
+              auth: 'walletAuthToken',
+              inputSchema: {
+                type: 'object',
+                required: ['requestid'],
+                properties: { requestid: { type: 'string' } }
+              },
+              outputSchema: {
+                type: 'object',
+                description: 'Empty 202 response on success.'
+              }
+            },
+            {
+              path: '/upload',
+              method: 'POST',
+              description: 'Upload a file (multipart) and pin it. Requires payment.',
+              contentType: 'multipart/form-data',
+              inputSchema: UPLOAD_INPUT_SCHEMA,
+              outputSchema: UPLOAD_OUTPUT_SCHEMA
+            }
+          ]
         },
         gateway: {
           endpoint: '/ipfs/:cid',
-          supports: ['etag', 'range', 'cache-control', 'optional-paywall']
+          supports: ['etag', 'range', 'cache-control', 'optional-paywall'],
+          routes: [
+            {
+              path: '/ipfs/:cid',
+              method: 'GET',
+              description:
+                'Retrieve content by CID. Free by default; owner-attached paywall returns 402 with a runtime challenge.',
+              inputSchema: {
+                type: 'object',
+                required: ['cid'],
+                properties: {
+                  cid: { type: 'string', description: 'IPFS CID to retrieve' }
+                }
+              },
+              outputSchema: {
+                description: 'Raw content bytes. Content-Type is detected from the payload.',
+                type: 'string',
+                format: 'binary'
+              }
+            }
+          ]
         },
         privateStorage: {
           storage: 'not-ipfs',
@@ -848,7 +1165,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
             session: 'Authorization: Bearer <token>',
             walletLogin: ['/auth/challenge', '/auth/token']
           }
-        }
+        },
       },
       payments: {
         protocols,
@@ -899,7 +1216,12 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
   });
 
   app.post('/pins', async (c) => {
-    const body = parsePinPayload(await parseJsonBody(c));
+    // Read raw JSON ONCE so both the typed parse AND the size extraction see the
+    // same unstripped object. parsePinPayload strips top-level sizeBytes; if we
+    // passed the *parsed* output to parseSizeBytesFromPinPayload, top-level
+    // sizeBytes would be silently dropped.
+    const rawJson = await parseJsonBody(c);
+    const body = parsePinPayload(rawJson);
     const paymentResult = c.get('paymentResult');
     const paidWallet = paymentResult?.wallet ?? requirePaidWallet(c.req.raw.headers);
     issueWalletAuthToken(c, paidWallet, services.walletAuth);
@@ -909,11 +1231,25 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       services.defaultDurationMonths ?? 1,
       services.maxDurationMonths ?? 24
     );
+
+    // Mirrors x402's pricing-side parser order (header preferred), but
+    // deliberately omits the content-length fallback x402 uses
+    // (services/x402.ts:96-98) — for POST /pins, content-length is the
+    // JSON envelope size, not the file, and would record a misleading
+    // size_bytes on the pin row.
+    const sizeFromHeader = parseNonNegativeInteger(c.req.header('x-content-size-bytes'));
+    const sizeFromBody = sizeFromHeader === undefined
+      ? parseSizeBytesFromPinPayload(rawJson)
+      : undefined;
+    const sizeBytes = sizeFromHeader ?? sizeFromBody;
+
     const result = await services.pinningService.createPin({
       ...body,
       owner: paidWallet,
-      durationMonths
+      durationMonths,
+      sizeBytes
     });
+    c.set('pinRequestIdForUsage', result.requestid);
     return c.json(toPinStatusResponse(result), 202);
   });
 
@@ -954,6 +1290,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     const body = parsePinPayload(await parseJsonBody(c));
     const wallet = requireOwnerWallet(c);
     const record = await services.pinningService.replacePin(c.req.param('requestid'), body, wallet);
+    c.set('pinRequestIdForUsage', record.requestid);
     return c.json(toPinStatusResponse(record), 202);
   });
 
@@ -983,9 +1320,9 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     }
 
     issueWalletAuthToken(c, paidWallet, services.walletAuth);
-    const cid = await services.pinningService.uploadContent(upload, upload.name || 'upload.bin');
+    const { cid, size } = await services.pinningService.uploadContent(upload, upload.name || 'upload.bin');
 
-    return c.json({ cid }, 201);
+    return c.json({ cid, size }, 201);
   });
 
   app.post('/private/objects', async (c) => {

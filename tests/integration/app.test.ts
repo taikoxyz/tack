@@ -13,11 +13,15 @@ import { GatewayTimeoutError, UpstreamServiceError } from '../../src/lib/errors'
 import { PinRepository } from '../../src/repositories/pin-repository';
 import { PrivateObjectRepository } from '../../src/repositories/private-object-repository';
 import { WalletAuthChallengeRepository } from '../../src/repositories/wallet-auth-challenge-repository';
+import { MetricsRepository } from '../../src/repositories/metrics-repository';
+import { PaymentRepository } from '../../src/repositories/payment-repository';
+import { hashUsageApiKey, UsageApiKeyRepository } from '../../src/repositories/usage-api-key-repository';
 import type { IpfsClient } from '../../src/services/ipfs-rpc-client';
 import { GatewayContentCache } from '../../src/services/content-cache';
 import { PinningService } from '../../src/services/pinning-service';
 import { LocalPrivateObjectStorage } from '../../src/services/private-object-storage';
 import { PrivateObjectService } from '../../src/services/private-object-service';
+import { UsageMetricsService } from '../../src/services/usage/usage-service';
 import { InMemoryRateLimiter } from '../../src/services/rate-limiter';
 import { WalletLoginService } from '../../src/services/wallet-login';
 import {
@@ -35,6 +39,7 @@ import {
 } from '../../src/services/payment/middleware';
 import { createMppChallengeEnhancer } from '../../src/services/payment/challenge-enhancer';
 import { requireOwnerWalletFromHeaders } from '../../src/services/payment/owner-auth';
+import { createMppChainContext } from '../../src/services/payment/mpp';
 
 const walletA = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const walletB = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -296,7 +301,7 @@ describe('API integration', () => {
     ipfsClient = {
       pinAdd: vi.fn().mockResolvedValue(undefined),
       pinRm: vi.fn().mockResolvedValue(undefined),
-      addContent: vi.fn().mockResolvedValue('bafy-uploaded-cid'),
+      addContent: vi.fn().mockResolvedValue({ hash: 'bafy-uploaded-cid', size: 0 }),
       cat: vi.fn().mockResolvedValue(new TextEncoder().encode('hello world').buffer)
     };
 
@@ -542,8 +547,9 @@ describe('API integration', () => {
 
     expect(uploadRes.status).toBe(201);
     extractIssuedOwnerToken(uploadRes);
-    const uploadBody = (await uploadRes.json()) as { cid: string };
+    const uploadBody = (await uploadRes.json()) as { cid: string; size: number };
     expect(uploadBody.cid).toBe('bafy-uploaded-cid');
+    expect(typeof uploadBody.size).toBe('number');
 
     const getRes = await app.request('http://localhost/ipfs/bafy-uploaded-cid');
     expect(getRes.status).toBe(200);
@@ -764,6 +770,19 @@ describe('API integration', () => {
     expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8');
     expect(response.headers.get('content-disposition')).toBe('attachment; filename=\"unsafe_page.html\"');
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('advertises and serves a favicon', async () => {
+    const landing = await app.request('http://localhost/');
+    expect(landing.status).toBe(200);
+    const landingHtml = await landing.text();
+    expect(landingHtml).toContain('<link rel="icon" href="/favicon.svg?v=tack-wordmark-20260428" type="image/svg+xml" />');
+    expect(landingHtml.match(/rel="icon"/g)).toHaveLength(1);
+
+    const favicon = await app.request('http://localhost/favicon.svg');
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get('content-type')).toBe('image/svg+xml; charset=utf-8');
+    expect(await favicon.text()).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
   });
 
   it('serves an AgentCard endpoint', async () => {
@@ -1449,7 +1468,8 @@ describe('API integration', () => {
         mppx: stub,
         requirementFn: requirementFn as Parameters<typeof createMppPaymentMiddleware>[0]['requirementFn'],
         resolveVerifiedPayer:
-          overrides?.resolveVerifiedPayer ?? (() => Promise.resolve(MPP_VERIFIED_WALLET))
+          overrides?.resolveVerifiedPayer ?? (() => Promise.resolve(MPP_VERIFIED_WALLET)),
+        chainContext: createMppChainContext(false),
       });
       const mppChallengeEnhancer = createMppChallengeEnhancer({
         mppx: stub,
@@ -1749,6 +1769,7 @@ describe('API integration', () => {
         mppx: stub,
         requirementFn: requirementFn as Parameters<typeof createMppPaymentMiddleware>[0]['requirementFn'],
         resolveVerifiedPayer,
+        chainContext: createMppChainContext(false),
       });
       const mppChallengeEnhancer = createMppChallengeEnhancer({
         mppx: stub,
@@ -1829,6 +1850,84 @@ describe('API integration', () => {
     });
   });
 
+  it('persists size_bytes from x-content-size-bytes header on POST /pins', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-content-size-bytes': '8675309'
+      },
+      body: JSON.stringify({ cid: 'bafy-sized-integration' })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(8675309);
+  });
+
+  it('persists size_bytes from top-level body sizeBytes when header absent', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ cid: 'bafy-body-size', sizeBytes: 12345 })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(12345);
+  });
+
+  it('persists size_bytes from meta.contentSizeBytes when header absent', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ cid: 'bafy-meta-size', meta: { contentSizeBytes: '67890' } })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(67890);
+  });
+
+  it('header x-content-size-bytes takes precedence over body sizeBytes', async () => {
+    const createRes = await paidRequest(app, 'http://localhost/pins', walletA, () => ({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-content-size-bytes': '100'
+      },
+      body: JSON.stringify({ cid: 'bafy-header-wins', sizeBytes: 999999 })
+    }));
+
+    expect(createRes.status).toBe(202);
+    const created = (await createRes.json()) as { requestid: string };
+
+    const row = db
+      .prepare('SELECT size_bytes FROM pins WHERE requestid = ?')
+      .get(created.requestid) as { size_bytes: number | null } | undefined;
+
+    expect(row?.size_bytes).toBe(100);
+  });
+
   describe('multi-chain x402', () => {
     it('advertises both Taiko and Base in the 402 payment-required header', async () => {
       const multiChainApp = createApp({
@@ -1859,4 +1958,511 @@ describe('API integration', () => {
       expect(paymentRequired.accepts[0].amount).toBe(paymentRequired.accepts[1].amount);
     });
   });
+
+  describe('usage metrics recording middleware', () => {
+    it('increments total on every request', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const metricsApp = buildApp({ metricsRepository });
+
+      await metricsApp.request(new Request('http://localhost/health'));
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBe(1);
+      expect(summary.paid).toBe(0);
+      expect(summary.rejected_402).toBe(0);
+    });
+
+    it('increments rejected_402 on 402 responses', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const metricsApp = buildApp({ metricsRepository });
+
+      // Unpaid POST /pins → 402
+      const res = await metricsApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cid: 'bafy-report-test' })
+        })
+      );
+      expect(res.status).toBe(402);
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBe(1);
+      expect(summary.rejected_402).toBe(1);
+      expect(summary.paid).toBe(0);
+    });
+
+    it('increments paid and calls paymentRecorder.record on 2xx with paymentResult', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const { PaymentRecorder } = await import('../../src/services/usage/payment-recorder');
+      const { PaymentRepository } = await import('../../src/repositories/payment-repository');
+
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
+      const recordSpy = vi.spyOn(paymentRecorder, 'record');
+
+      const metricsApp = buildApp({ metricsRepository, paymentRecorder });
+
+      // Full paid request: goes 402 first, then paid
+      const paidRes = await paidRequest(metricsApp, 'http://localhost/pins', walletA, () => ({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-paid-report' })
+      }));
+      expect(paidRes.status).toBe(202);
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      // 2 requests total: one 402 (unpaid probe) + one 202 (paid)
+      expect(summary.total).toBe(2);
+      expect(summary.rejected_402).toBe(1);
+      expect(summary.paid).toBe(1);
+      expect(recordSpy).toHaveBeenCalledOnce();
+      const [recordedResult, recordedCtx] = recordSpy.mock.calls[0];
+      expect(recordedResult).toMatchObject({ wallet: walletA, protocol: 'x402' });
+      // pinRequestId must be the actual pin requestid created by POST /pins (T13).
+      const createdPin = await paidRes.clone().json() as { requestid: string };
+      expect(recordedCtx).toMatchObject({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        requestId: expect.any(String), // expect.any() returns AsymmetricMatcher typed as any
+        pinRequestId: createdPin.requestid,
+      });
+    });
+
+    it('increments total counter when handler throws (catch-branch coverage)', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const metricsApp = buildApp({ metricsRepository });
+
+      // POST /pins with malformed JSON body — the JSON parser throws a
+      // ValidationError-equivalent server-side, exercising the catch branch
+      // of the metrics recording middleware. The counter must still increment.
+      await metricsApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: 'not-json{{{',
+        })
+      );
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBeGreaterThanOrEqual(1);
+    });
+
+    it('does not increment paid or call paymentRecorder when paymentResult is absent', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRecorder = { record: vi.fn() };
+
+      const metricsApp = buildApp({ metricsRepository, paymentRecorder: paymentRecorder as never });
+
+      // GET /health — no payment, returns 200
+      await metricsApp.request(new Request('http://localhost/health'));
+
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({
+        startDay: day,
+        endDayExclusive: day + 'z',
+      });
+      expect(summary.total).toBe(1);
+      expect(summary.paid).toBe(0);
+      expect(paymentRecorder.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('usage metrics recording integration', () => {
+    // Shared helpers — all tests in this block use a real PaymentRepository and
+    // a real PaymentRecorder so we can assert on the actual DB rows rather than
+    // spy calls.
+
+    async function buildUsageHarness(overrides?: Partial<Parameters<typeof createApp>[0]>) {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const { PaymentRecorder } = await import('../../src/services/usage/payment-recorder');
+      const { PaymentRepository } = await import('../../src/repositories/payment-repository');
+
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
+
+      const metricsApp = buildApp({ metricsRepository, paymentRecorder, ...overrides });
+
+      return { metricsRepository, paymentRepository, paymentRecorder, metricsApp };
+    }
+
+    it('x402 paid POST /pins lands a payments row with correct fields', async () => {
+      const { paymentRepository, metricsApp } = await buildUsageHarness();
+
+      const paidRes = await paidRequest(metricsApp, 'http://localhost/pins', walletA, () => ({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-t21-x402' })
+      }));
+      expect(paidRes.status).toBe(202);
+      const createdPin = (await paidRes.json()) as { requestid: string };
+
+      // Query the payments table directly — one row must exist.
+      const rows = db
+        .prepare('SELECT * FROM payments WHERE protocol = ?')
+        .all('x402') as Array<{
+          id: string;
+          protocol: string;
+          payer_wallet: string;
+          amount_atomic: string;
+          endpoint: string;
+          pin_request_id: string | null;
+          request_id: string | null;
+        }>;
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+
+      expect(row.protocol).toBe('x402');
+      // payer_wallet must be stored lowercase (PaymentRecorder.record calls .toLowerCase()).
+      expect(row.payer_wallet).toBe(walletA.toLowerCase());
+      // endpoint must be 'pin' for POST /pins.
+      expect(row.endpoint).toBe('pin');
+      // amount_atomic must be a non-zero numeric string.
+      expect(Number(row.amount_atomic)).toBeGreaterThan(0);
+      // pin_request_id must link back to the created pin (T13 requirement).
+      expect(row.pin_request_id).toBe(createdPin.requestid);
+      // request_id must thread through from the X-Request-Id response header.
+      expect(row.request_id).toBe(paidRes.headers.get('X-Request-Id'));
+
+      // Verify via the repository's typed API as well.
+      const record = paymentRepository.findById(row.id);
+      expect(record).not.toBeNull();
+      expect(record!.protocol).toBe('x402');
+      expect(record!.chain_id).toBe(167000); // Taiko Alethia (eip155:167000)
+      expect(record!.asset_address).toBe(taikoChain.usdcAssetAddress.toLowerCase());
+      expect(record!.asset_decimals).toBe(6);
+    });
+
+    it('MPP paid POST /pins lands a payments row with protocol=mpp', async () => {
+      const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
+      const { PaymentRecorder } = await import('../../src/services/usage/payment-recorder');
+      const { PaymentRepository } = await import('../../src/repositories/payment-repository');
+
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const paymentRecorder = new PaymentRecorder(paymentRepository, { error: vi.fn(), warn: vi.fn() });
+
+      // Build a dual-protocol app that also wires the real recorder.
+      const MPP_WALLET = '0xdddddddddddddddddddddddddddddddddddddddd';
+      const stub = (() => {
+        const chargeCalls: Array<{ amount: string; recipient?: string }> = [];
+        const handler: MppxChargeHandler & { chargeCalls: typeof chargeCalls } = {
+          chargeCalls,
+          charge: (options) => {
+            chargeCalls.push(options);
+            return (req: Request) => {
+              const authHeader = req.headers.get('Authorization');
+              const hasCredential = authHeader != null && /^payment\s+/i.test(authHeader);
+              if (!hasCredential) {
+                return Promise.resolve({
+                  status: 402 as const,
+                  challenge: new Response(
+                    JSON.stringify({ error: 'Payment required', method: 'tempo' }),
+                    {
+                      status: 402,
+                      headers: {
+                        'Content-Type': 'application/problem+json',
+                        'WWW-Authenticate': `Payment id="stub", realm="tack", method="tempo", intent="charge", amount="${options.amount}"`
+                      }
+                    }
+                  )
+                });
+              }
+              return Promise.resolve({
+                status: 200 as const,
+                withReceipt: (response: Response) => {
+                  const headers = new Headers(response.headers);
+                  headers.set('Payment-Receipt', `receipt-${options.amount}`);
+                  return new Response(response.body, { status: response.status, headers });
+                }
+              });
+            };
+          }
+        };
+        return handler;
+      })();
+
+      const requirementFn = (c: { req: { path: string; method: string } }) => {
+        if (c.req.path === '/pins' && c.req.method === 'POST') {
+          return { amount: '0.001', recipient: taikoChain.payTo };
+        }
+        return null;
+      };
+
+      const mppMiddleware = createMppPaymentMiddleware({
+        mppx: stub,
+        requirementFn: requirementFn as Parameters<typeof createMppPaymentMiddleware>[0]['requirementFn'],
+        resolveVerifiedPayer: () => Promise.resolve(MPP_WALLET),
+        chainContext: createMppChainContext(false),
+      });
+      const mppChallengeEnhancer = createMppChallengeEnhancer({
+        mppx: stub,
+        requirementFn: requirementFn as Parameters<typeof createMppChallengeEnhancer>[0]['requirementFn'],
+        assetDecimals: 6,
+      });
+
+      const mppApp = buildApp({ mppMiddleware, mppChallengeEnhancer, metricsRepository, paymentRecorder });
+
+      const res = await mppApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'authorization': 'Payment stub-credential'
+          },
+          body: JSON.stringify({ cid: 'bafy-t21-mpp' })
+        })
+      );
+      expect(res.status).toBe(202);
+      const createdPin = (await res.json()) as { requestid: string };
+
+      // One payments row with protocol='mpp' must exist in the DB.
+      const rows = db
+        .prepare('SELECT * FROM payments WHERE protocol = ?')
+        .all('mpp') as Array<{
+          id: string;
+          protocol: string;
+          payer_wallet: string;
+          amount_atomic: string;
+          amount_usd: number;
+          endpoint: string;
+          pin_request_id: string | null;
+        }>;
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+
+      expect(row.protocol).toBe('mpp');
+      expect(row.payer_wallet).toBe(MPP_WALLET.toLowerCase());
+      expect(row.endpoint).toBe('pin');
+      // 0.001 USD * 10^6 = 1000 atomic units (USDC.e has 6 decimals).
+      expect(row.amount_atomic).toBe('1000');
+      expect(row.amount_usd).toBe(0.001);
+      expect(row.pin_request_id).toBe(createdPin.requestid);
+
+      // Verify via typed repository API.
+      const record = paymentRepository.findById(row.id);
+      expect(record).not.toBeNull();
+      expect(record!.protocol).toBe('mpp');
+      // createMppChainContext(false) selects Tempo mainnet; chain_id is 4217.
+      expect(record!.chain_id).toBe(4217);
+      expect(record!.asset_decimals).toBe(6);
+
+      // metricsRepository must show paid=1, total=1 (single request; MPP skips the 402 probe).
+      const day = new Date().toISOString().slice(0, 10);
+      const metricsSummary = metricsRepository.summarizeWindow({ startDay: day, endDayExclusive: day + 'z' });
+      expect(metricsSummary.paid).toBe(1);
+      expect(metricsSummary.total).toBe(1);
+      expect(metricsSummary.rejected_402).toBe(0);
+    });
+
+    it('counter buckets tick correctly across free, unpaid-402, and paid requests', async () => {
+      const { metricsRepository, metricsApp } = await buildUsageHarness();
+
+      // 1. Free request — GET /health → 200, no payment.
+      const freeRes = await metricsApp.request(new Request('http://localhost/health'));
+      expect(freeRes.status).toBe(200);
+
+      // 2. Unpaid POST /pins → 402.
+      const unpaidRes = await metricsApp.request(
+        new Request('http://localhost/pins', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cid: 'bafy-t21-counter-unpaid' })
+        })
+      );
+      expect(unpaidRes.status).toBe(402);
+
+      // 3. Paid POST /pins → 202.
+      const paidRes = await paidRequest(metricsApp, 'http://localhost/pins', walletA, () => ({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-t21-counter-paid' })
+      }));
+      // paidRequest makes an unpaid probe (→ 402) then a paid request (→ 202).
+      expect(paidRes.status).toBe(202);
+
+      // Total requests seen by the middleware:
+      //   1 (GET /health) + 1 (explicit unpaid) + 1 (paidRequest probe) + 1 (actual paid) = 4.
+      // paid = 1 (the successful paid request).
+      // rejected_402 = 2 (explicit unpaid + paidRequest probe).
+      const day = new Date().toISOString().slice(0, 10);
+      const summary = metricsRepository.summarizeWindow({ startDay: day, endDayExclusive: day + 'z' });
+
+      expect(summary.total).toBe(4);
+      expect(summary.paid).toBe(1);
+      expect(summary.rejected_402).toBe(2);
+    });
+  });
+
+  describe('usage metrics API', () => {
+    const rawUsageApiKey = '0123456789abcdef0123456789abcdef';
+
+    const createUsageApiKeys = (): UsageApiKeyRepository => {
+      const usageApiKeys = new UsageApiKeyRepository(db);
+      usageApiKeys.create({
+        id: 'uak_test',
+        name: 'test-client',
+        keyHash: hashUsageApiKey(rawUsageApiKey),
+        createdAt: '2026-04-28T00:00:00.000Z',
+      });
+      return usageApiKeys;
+    };
+
+    it('requires an active usage API key', async () => {
+      const usageMetrics = new UsageMetricsService({
+        payments: new PaymentRepository(db),
+        metrics: new MetricsRepository(db),
+        pins: new PinRepository(db),
+      });
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKeys: createUsageApiKeys(),
+      });
+
+      const res = await usageApp.request('/usage/summary');
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        error: 'unauthorized',
+        message: 'valid usage API key is required',
+      });
+    });
+
+    it('returns a structured usage and revenue summary for API-key clients', async () => {
+      const metricsRepository = new MetricsRepository(db);
+      const paymentRepository = new PaymentRepository(db);
+      const pinRepository = new PinRepository(db);
+      const usageMetrics = new UsageMetricsService(
+        { payments: paymentRepository, metrics: metricsRepository, pins: pinRepository },
+        () => new Date('2026-04-28T15:30:00.000Z')
+      );
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKeys: createUsageApiKeys(),
+      });
+
+      paymentRepository.insert({
+        id: 'pay_1',
+        occurred_at: '2026-04-21T12:00:00.000Z',
+        protocol: 'x402',
+        chain_id: 167000,
+        payer_wallet: walletA,
+        asset_address: taikoChain.usdcAssetAddress,
+        asset_decimals: 6,
+        amount_atomic: '1500',
+        amount_usd: 0.0015,
+        endpoint: 'pin',
+        request_id: 'req_1',
+        tx_hash: null,
+        pin_request_id: 'pin_1',
+      });
+      metricsRepository.increment('2026-04-21', 'total');
+      metricsRepository.increment('2026-04-21', 'paid');
+      pinRepository.create({
+        requestid: 'pin_1',
+        cid: 'bafy-usage-api',
+        name: null,
+        status: 'pinned',
+        origins: [],
+        meta: {},
+        delegates: [],
+        info: {},
+        owner: walletA,
+        created: '2026-04-21T00:00:00.000Z',
+        updated: '2026-04-21T00:00:00.000Z',
+        expires_at: null,
+        size_bytes: 4096,
+      });
+
+      const res = await usageApp.request('/usage/summary?start=2026-04-21&end=2026-04-22', {
+        headers: { 'x-api-key': rawUsageApiKey },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      const body = await res.json() as {
+        window: { startDay: string; endDayExclusive: string };
+        revenue: { totalUsd: number; paymentCount: number; byEndpoint: { pin: { count: number } } };
+        requests: { total: number; paid: number; free: number };
+        pins: { created: { count: number; totalBytes: number } };
+        wallets: { payersInWindow: number };
+      };
+
+      expect(body.window).toMatchObject({ startDay: '2026-04-21', endDayExclusive: '2026-04-22' });
+      expect(body.revenue.totalUsd).toBe(0.0015);
+      expect(body.revenue.paymentCount).toBe(1);
+      expect(body.revenue.byEndpoint.pin.count).toBe(1);
+      expect(body.requests).toMatchObject({ total: 1, paid: 1, free: 0 });
+      expect(body.pins.created).toEqual({ count: 1, totalBytes: 4096 });
+      expect(body.wallets.payersInWindow).toBe(1);
+    });
+
+    it('exposes section endpoints with the same window and auth contract', async () => {
+      const usageMetrics = new UsageMetricsService(
+        {
+          payments: new PaymentRepository(db),
+          metrics: new MetricsRepository(db),
+          pins: new PinRepository(db),
+        },
+        () => new Date('2026-04-28T15:30:00.000Z')
+      );
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKeys: createUsageApiKeys(),
+      });
+
+      const res = await usageApp.request('/usage/revenue?start=2026-04-21&end=2026-04-22', {
+        headers: { authorization: `Bearer ${rawUsageApiKey}` },
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({
+        window: { startDay: '2026-04-21', endDayExclusive: '2026-04-22' },
+        revenue: { totalUsd: 0, paymentCount: 0 },
+      });
+    });
+
+    it('returns a 400 for invalid usage windows', async () => {
+      const usageMetrics = new UsageMetricsService({
+        payments: new PaymentRepository(db),
+        metrics: new MetricsRepository(db),
+        pins: new PinRepository(db),
+      });
+      const usageApp = buildApp({
+        usageMetrics,
+        usageApiKeys: createUsageApiKeys(),
+      });
+
+      const res = await usageApp.request('/usage/summary?start=bad&end=2026-04-22', {
+        headers: { 'x-api-key': rawUsageApiKey },
+      });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        error: 'bad_request',
+        message: expect.stringContaining('YYYY-MM-DD') as string,
+      });
+    });
+  });
+
 });

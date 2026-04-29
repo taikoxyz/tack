@@ -14,6 +14,7 @@ interface DbPinRow {
   created: string;
   updated: string;
   expires_at: string | null;
+  size_bytes: number | null;
 }
 
 interface DbCidOwnerRow {
@@ -25,6 +26,17 @@ interface DbCidOwnerRow {
 interface HistoricalCidOwnerResolution {
   kind: 'none' | 'unique' | 'ambiguous';
   row?: DbCidOwnerRow;
+}
+
+export interface PinSummaryWindow {
+  start: string;
+  end: string;
+  now: string;
+}
+
+export interface PinSummary {
+  newPinsInWindow: { count: number; totalBytes: number };
+  activePins: { count: number; totalBytes: number };
 }
 
 export interface PinListFilters {
@@ -81,9 +93,9 @@ export class PinRepository {
   create(record: StoredPinRecord): void {
     const statement = this.db.prepare(`
       INSERT INTO pins (
-        requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at
+        requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes
       ) VALUES (
-        @requestid, @cid, @name, @status, @origins, @meta, @delegates, @info, @owner, @created, @updated, @expires_at
+        @requestid, @cid, @name, @status, @origins, @meta, @delegates, @info, @owner, @created, @updated, @expires_at, @size_bytes
       )
     `);
 
@@ -120,7 +132,8 @@ export class PinRepository {
           owner = @owner,
           created = @created,
           updated = @updated,
-          expires_at = @expires_at
+          expires_at = @expires_at,
+          size_bytes = @size_bytes
       WHERE requestid = @requestid
     `);
 
@@ -140,7 +153,7 @@ export class PinRepository {
 
   findByRequestId(requestid: string): StoredPinRecord | null {
     const row = this.db
-      .prepare('SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at FROM pins WHERE requestid = ?')
+      .prepare('SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes FROM pins WHERE requestid = ?')
       .get(requestid) as DbPinRow | undefined;
 
     return row ? this.mapRow(row) : null;
@@ -150,7 +163,7 @@ export class PinRepository {
     const pinnedRow = this.db
       .prepare(
         `
-          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at
+          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes
           FROM pins
           WHERE cid = ? AND status = 'pinned'
           ORDER BY updated DESC, created DESC, rowid DESC
@@ -166,7 +179,7 @@ export class PinRepository {
     const fallbackRow = this.db
       .prepare(
         `
-          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at
+          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes
           FROM pins
           WHERE cid = ?
           ORDER BY updated DESC, created DESC, rowid DESC
@@ -182,7 +195,7 @@ export class PinRepository {
     const pinnedRow = this.db
       .prepare(
         `
-          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at
+          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes
           FROM pins
           WHERE cid = ? AND owner = ? AND status = 'pinned'
           ORDER BY updated DESC, created DESC, rowid DESC
@@ -198,7 +211,7 @@ export class PinRepository {
     const fallbackRow = this.db
       .prepare(
         `
-          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at
+          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes
           FROM pins
           WHERE cid = ? AND owner = ?
           ORDER BY updated DESC, created DESC, rowid DESC
@@ -251,7 +264,7 @@ export class PinRepository {
     const total = this.db.prepare(countQuery).get(...params) as { count: number };
 
     const listQuery = `
-      SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at
+      SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes
       FROM pins
       ${whereClause}
       ORDER BY created DESC
@@ -272,7 +285,7 @@ export class PinRepository {
     const rows = this.db
       .prepare(
         `
-          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at
+          SELECT requestid, cid, name, status, origins, meta, delegates, info, owner, created, updated, expires_at, size_bytes
           FROM pins
           WHERE expires_at IS NOT NULL AND expires_at <= ? AND status IN ('pinned', 'failed')
           ORDER BY expires_at ASC
@@ -321,7 +334,8 @@ export class PinRepository {
       owner: row.owner,
       created: row.created,
       updated: row.updated,
-      expires_at: row.expires_at
+      expires_at: row.expires_at,
+      size_bytes: row.size_bytes
     };
   }
 
@@ -361,6 +375,25 @@ export class PinRepository {
     return {
       kind: 'unique',
       row: rows[0]
+    };
+  }
+
+  summarize(window: PinSummaryWindow): PinSummary {
+    const newPins = this.db.prepare(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS bytes
+       FROM pins
+       WHERE created >= ? AND created < ?`
+    ).get(window.start, window.end) as { count: number; bytes: number };
+
+    const active = this.db.prepare(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS bytes
+       FROM pins
+       WHERE status = 'pinned' AND (expires_at IS NULL OR expires_at > ?)`
+    ).get(window.now) as { count: number; bytes: number };
+
+    return {
+      newPinsInWindow: { count: newPins.count, totalBytes: newPins.bytes },
+      activePins: { count: active.count, totalBytes: active.bytes },
     };
   }
 }

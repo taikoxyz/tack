@@ -49,7 +49,6 @@ const PLACEHOLDER_WALLET_AUTH_SECRETS = new Set([
   'change-me',
   'changeme'
 ]);
-
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback;

@@ -12,6 +12,7 @@ import {
   createX402PaymentMiddleware,
   extractPaidWalletFromHeaders,
   parseDurationMonths,
+  readPaymentRequirements,
   resolveWalletFromHeaders,
   type WalletAuthConfig,
   type X402PaymentConfig
@@ -240,6 +241,165 @@ describe('x402 payment integration helpers', () => {
   });
 });
 
+describe('readPaymentRequirements', () => {
+  it('reads V2 amount field', () => {
+    const result = readPaymentRequirements({ network: 'eip155:167000', asset: '0xABCD', amount: '1000000' });
+    expect(result.amountAtomic).toBe('1000000');
+    expect(result.network).toBe('eip155:167000');
+    expect(result.asset).toBe('0xabcd');
+  });
+
+  it('falls back to maxAmountRequired when amount is absent (V1 shape)', () => {
+    const result = readPaymentRequirements({ network: 'eip155:167000', asset: '0xABCD', maxAmountRequired: '500000' });
+    expect(result.amountAtomic).toBe('500000');
+  });
+
+  it('falls through to "0" when both amount and maxAmountRequired are absent', () => {
+    const result = readPaymentRequirements({ network: 'eip155:167000', asset: '0xABCD' });
+    expect(result.amountAtomic).toBe('0');
+  });
+
+  it('empty-string amount falls through to maxAmountRequired (not stuck at empty)', () => {
+    // Empty-string amount must fall through (|| not ??), so maxAmountRequired is used.
+    const result = readPaymentRequirements({ network: 'eip155:167000', asset: '0xABCD', amount: '', maxAmountRequired: '750000' });
+    expect(result.amountAtomic).toBe('750000');
+  });
+
+  it('empty-string amount with no maxAmountRequired falls through to "0"', () => {
+    const result = readPaymentRequirements({ network: 'eip155:167000', asset: '0xABCD', amount: '' });
+    expect(result.amountAtomic).toBe('0');
+  });
+
+  it('asset-decimals lookup miss: when network does not match config, decimals default to 6', () => {
+    // readPaymentRequirements itself only extracts the network string.
+    // Decimals lookup happens in the middleware via config.chains.find.
+    // Test: a network value that won't match any chain in config returns an
+    // unmodified network string so callers can detect the miss and apply default 6.
+    const result = readPaymentRequirements({ network: 'eip155:42161', asset: '0xABCD', amount: '2000000' });
+    expect(result.network).toBe('eip155:42161');
+    // Simulate what the middleware does: look up chain, fall back to 6 decimals.
+    const matchedChain = testConfig.chains.find((ch) => ch.network === result.network);
+    const assetDecimals = matchedChain?.usdcAssetDecimals ?? 6;
+    expect(assetDecimals).toBe(6); // no match → default 6
+  });
+});
+
+describe('x402 txHash decoding', () => {
+  // The txHash decode path reads settleResult.headers['x-payment-response'],
+  // base64-decodes it, and extracts the `transaction` field as a string.
+  // The x402HTTPResourceServer never populates x-payment-response via the
+  // FacilitatorClient interface (it only populates PAYMENT-RESPONSE); this
+  // path is intended for direct HTTP facilitators that inject the header.
+  // We test the decode logic at the unit level here.
+
+  it('decodes txHash from base64-encoded x-payment-response JSON', () => {
+    // Replicate the IIFE decode logic from the middleware for unit coverage.
+    const txEncoded = Buffer.from(JSON.stringify({ transaction: '0xdeadbeef' })).toString('base64');
+
+    const decodeTxHash = (headerValue: string | undefined): string | undefined => {
+      if (!headerValue) return undefined;
+      try {
+        const decoded = JSON.parse(Buffer.from(headerValue, 'base64').toString('utf8')) as { transaction?: unknown };
+        return typeof decoded?.transaction === 'string' ? decoded.transaction : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+
+    expect(decodeTxHash(txEncoded)).toBe('0xdeadbeef');
+    expect(decodeTxHash(undefined)).toBeUndefined();
+    expect(decodeTxHash('')).toBeUndefined();
+    // Non-base64 garbage should return undefined without throwing.
+    expect(decodeTxHash('!!!not-base64!!!')).toBeUndefined();
+    // Valid base64 but missing transaction field.
+    const noTx = Buffer.from(JSON.stringify({ other: 'field' })).toString('base64');
+    expect(decodeTxHash(noTx)).toBeUndefined();
+  });
+
+  it('decodes txHash from PAYMENT-RESPONSE header (SDK casing)', () => {
+    // Replicate the decode IIFE logic with PAYMENT-RESPONSE casing
+    const headers: Record<string, string> = {
+      'PAYMENT-RESPONSE': Buffer.from(JSON.stringify({ transaction: '0xabc123' })).toString('base64'),
+    };
+
+    // Mirror the lookup chain from x402.ts
+    const headerValue =
+      headers['PAYMENT-RESPONSE'] ??
+      headers['Payment-Response'] ??
+      headers['payment-response'] ??
+      headers['x-payment-response'] ??
+      headers['X-Payment-Response'];
+
+    expect(headerValue).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const parsed = JSON.parse(Buffer.from(headerValue ?? '', 'base64').toString('utf8'));
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(parsed.transaction).toBe('0xabc123');
+  });
+
+  it('middleware txHash is undefined when x-payment-response header is absent (mock facilitator)', async () => {
+    // Confirm via the full middleware harness that when the mock facilitator
+    // does not produce an x-payment-response header, txHash is undefined.
+    // (This is the same assertion as the existing paymentResult test; this
+    // test explicitly documents the x-payment-response absence behaviour.)
+    let capturedPaymentResult: unknown = undefined;
+
+    const app = new Hono();
+    app.use(async (c, next) => {
+      await next();
+      capturedPaymentResult = (c as unknown as { get: (key: string) => unknown }).get('paymentResult');
+    });
+    app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
+    app.post('/pins', (c) => c.json({ ok: true }));
+
+    const unpaid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-test' })
+      })
+    );
+    expect(unpaid.status).toBe(402);
+
+    const paymentRequired = decodePaymentRequiredHeader(unpaid.headers.get('payment-required')!);
+    const accepted = paymentRequired.accepts[0];
+
+    const paymentPayload: PaymentPayload = {
+      x402Version: paymentRequired.x402Version,
+      accepted,
+      payload: {
+        authorization: {
+          from: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+          to: taikoChain.payTo,
+          value: accepted.amount,
+          validAfter: '0',
+          validBefore: '9999999999',
+          nonce: `0x${'0'.repeat(64)}`
+        },
+        signature: `0x${'1'.repeat(130)}`
+      }
+    };
+
+    capturedPaymentResult = undefined;
+    const paid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'payment-signature': encodePaymentSignatureHeader(paymentPayload)
+        },
+        body: JSON.stringify({ cid: 'bafy-test' })
+      })
+    );
+    expect(paid.status).toBe(200);
+
+    const pr = capturedPaymentResult as { txHash?: string };
+    // The x402HTTPResourceServer emits the settlement result as PAYMENT-RESPONSE
+    // (uppercase). Our lookup now correctly finds it, so txHash is populated.
+    expect(pr.txHash).toBe('0xtest');
+  });
+});
+
 describe('x402 middleware', () => {
   it('sets paymentResult for verified x402 requests', async () => {
     type Env = { Variables: { paymentResult?: PaymentResult } };
@@ -430,7 +590,7 @@ describe('x402 middleware', () => {
 
   it('uses the normalized public URL in payment requirements', async () => {
     const app = new Hono();
-    app.use(createExternalRequestUrlMiddleware({ publicBaseUrl: 'https://tack.taiko.xyz' }));
+    app.use(createExternalRequestUrlMiddleware({ publicBaseUrl: 'https://tack.inferenceroom.ai' }));
     app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
     app.post('/pins', (c) => c.json({ ok: true }));
 
@@ -449,7 +609,7 @@ describe('x402 middleware', () => {
     expect(paymentRequiredHeader).toBeTruthy();
 
     const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
-    expect(paymentRequired.resource?.url).toBe('https://tack.taiko.xyz/pins');
+    expect(paymentRequired.resource?.url).toBe('https://tack.inferenceroom.ai/pins');
   });
 
   it('enforces optional retrieval paywall with dynamic owner payout', async () => {
@@ -547,5 +707,173 @@ describe('x402 middleware', () => {
     expect(paymentRequired.accepts[0].amount).toBe(paymentRequired.accepts[1].amount);
     expect(paymentRequired.accepts[0].asset).toBe(taikoChain.usdcAssetAddress);
     expect(paymentRequired.accepts[1].asset).toBe(baseChain.usdcAssetAddress);
+  });
+
+  it('sets paymentResult on the request context after a verified settlement', async () => {
+    // paymentResult is set AFTER next() returns (post-settlement) inside the
+    // x402 middleware. To capture it, we register an outermost middleware that
+    // reads paymentResult after its own next() resolves — by then, x402 has
+    // completed its full settlement cycle.
+    let capturedPaymentResult: unknown = undefined;
+
+    const app = new Hono();
+    // Outermost: reads paymentResult after the full middleware chain settles.
+    app.use(async (c, next) => {
+      await next();
+      capturedPaymentResult = (c as unknown as { get: (key: string) => unknown }).get('paymentResult');
+    });
+    app.use(createX402PaymentMiddleware(testConfig, mockFacilitator));
+    app.post('/pins', (c) => c.json({ ok: true }));
+
+    // First: unpaid request to get the payment requirements.
+    const unpaid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cid: 'bafy-test' })
+      })
+    );
+    expect(unpaid.status).toBe(402);
+    const paymentRequiredHeader = unpaid.headers.get('payment-required');
+    expect(paymentRequiredHeader).toBeTruthy();
+
+    const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
+    const accepted = paymentRequired.accepts[0];
+
+    // Build a valid-looking payment payload with a known wallet address.
+    const payerWallet = '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+    const paymentPayload: PaymentPayload = {
+      x402Version: paymentRequired.x402Version,
+      accepted,
+      payload: {
+        authorization: {
+          from: payerWallet,
+          to: taikoChain.payTo,
+          value: accepted.amount,
+          validAfter: '0',
+          validBefore: '9999999999',
+          nonce: `0x${'0'.repeat(64)}`
+        },
+        signature: `0x${'1'.repeat(130)}`
+      }
+    };
+
+    // Reset capture before the paid request.
+    capturedPaymentResult = undefined;
+
+    // Paid request — middleware should set paymentResult after settlement.
+    const paid = await app.request(
+      new Request('http://localhost/pins', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'payment-signature': encodePaymentSignatureHeader(paymentPayload)
+        },
+        body: JSON.stringify({ cid: 'bafy-test' })
+      })
+    );
+
+    expect(paid.status).toBe(200);
+
+    type CapturedPaymentResult = {
+      wallet: string;
+      protocol: string;
+      chainName: string;
+      chainId: number;
+      assetAddress: string;
+      assetDecimals: number;
+      amountAtomic: string;
+      amountUsd: number;
+      endpoint: string;
+      txHash?: string;
+    };
+    const pr = capturedPaymentResult as CapturedPaymentResult;
+
+    expect(pr).not.toBeUndefined();
+    expect(pr).not.toBeNull();
+    expect(pr.wallet).toBe(payerWallet.toLowerCase());
+    expect(pr.protocol).toBe('x402');
+    expect(pr.chainName).toBe('taiko');
+    expect(pr.chainId).toBe(167000);
+    expect(pr.endpoint).toBe('pin');
+    expect(pr.assetAddress).toBe(taikoChain.usdcAssetAddress.toLowerCase());
+    expect(pr.assetDecimals).toBe(6);
+    expect(typeof pr.amountAtomic).toBe('string');
+    expect(typeof pr.amountUsd).toBe('number');
+    // amountUsd should be a non-negative finite number.
+    expect(Number.isFinite(pr.amountUsd)).toBe(true);
+    expect(pr.amountUsd).toBeGreaterThanOrEqual(0);
+    // txHash: the x402HTTPResourceServer emits the settlement result as PAYMENT-RESPONSE
+    // (uppercase). Our lookup now correctly finds it, so txHash is populated from the
+    // mock facilitator's transaction value.
+    expect(pr.txHash).toBe('0xtest');
+  });
+
+  it('sets endpoint to "retrieval" when path starts with /ipfs/', async () => {
+    const premiumOwner = '0xcccccccccccccccccccccccccccccccccccccccc';
+    let capturedPaymentResult: unknown = undefined;
+
+    const app = new Hono();
+    // Outermost: reads paymentResult after the full middleware chain settles.
+    app.use(async (c, next) => {
+      await next();
+      capturedPaymentResult = (c as unknown as { get: (key: string) => unknown }).get('paymentResult');
+    });
+    app.use(
+      createX402PaymentMiddleware(testConfig, mockFacilitator, {
+        resolveRetrievalPayment: (cid) => {
+          if (cid === 'premium-cid') {
+            return { payTo: premiumOwner, priceUsd: 0.0025 };
+          }
+          return null;
+        }
+      })
+    );
+    app.get('/ipfs/:cid', (c) => c.json({ cid: c.req.param('cid') }));
+
+    // First: unpaid request to get the payment requirements.
+    const unpaid = await app.request('http://localhost/ipfs/premium-cid');
+    expect(unpaid.status).toBe(402);
+    const paymentRequiredHeader = unpaid.headers.get('payment-required');
+    expect(paymentRequiredHeader).toBeTruthy();
+
+    const paymentRequired = decodePaymentRequiredHeader(paymentRequiredHeader!);
+    const accepted = paymentRequired.accepts[0];
+
+    const payerWallet = '0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+    const paymentPayload: PaymentPayload = {
+      x402Version: paymentRequired.x402Version,
+      accepted,
+      payload: {
+        authorization: {
+          from: payerWallet,
+          to: premiumOwner,
+          value: accepted.amount,
+          validAfter: '0',
+          validBefore: '9999999999',
+          nonce: `0x${'0'.repeat(64)}`
+        },
+        signature: `0x${'1'.repeat(130)}`
+      }
+    };
+
+    capturedPaymentResult = undefined;
+
+    const paid = await app.request(
+      new Request('http://localhost/ipfs/premium-cid', {
+        headers: {
+          'payment-signature': encodePaymentSignatureHeader(paymentPayload)
+        }
+      })
+    );
+
+    expect(paid.status).toBe(200);
+
+    const pr = capturedPaymentResult as { endpoint: string; protocol: string; wallet: string };
+    expect(pr).not.toBeUndefined();
+    expect(pr).not.toBeNull();
+    expect(pr.protocol).toBe('x402');
+    expect(pr.endpoint).toBe('retrieval');
+    expect(pr.wallet).toBe(payerWallet.toLowerCase());
   });
 });

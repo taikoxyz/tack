@@ -135,28 +135,71 @@ function buildGuidance(input: BuildOpenApiInput): string {
   ].join(' ');
 }
 
+export const PIN_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['cid'],
+  properties: {
+    cid: { type: 'string', description: 'IPFS content identifier to pin' },
+    name: { type: 'string', description: 'Optional human-readable name' },
+    origins: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Optional peer multiaddrs to fetch from'
+    },
+    meta: {
+      type: 'object',
+      additionalProperties: { type: 'string' },
+      description: 'Optional metadata. meta.retrievalPrice gates GET /ipfs/:cid behind a paywall.'
+    }
+  }
+} as const;
+
+export const PIN_STATUS_SCHEMA = {
+  type: 'object',
+  required: ['requestid', 'status', 'created', 'pin', 'delegates'],
+  properties: {
+    requestid: { type: 'string' },
+    status: {
+      type: 'string',
+      enum: ['queued', 'pinning', 'pinned', 'failed']
+    },
+    created: { type: 'string', format: 'date-time' },
+    pin: { type: 'object' },
+    delegates: { type: 'array', items: { type: 'string' } },
+    info: { type: 'object', additionalProperties: true }
+  }
+} as const;
+
+export const PIN_LIST_SCHEMA = {
+  type: 'object',
+  required: ['count', 'results'],
+  properties: {
+    count: { type: 'integer' },
+    results: { type: 'array', items: PIN_STATUS_SCHEMA }
+  }
+} as const;
+
+export const UPLOAD_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['file'],
+  properties: {
+    file: { type: 'string', format: 'binary', description: 'File contents (multipart field "file")' }
+  }
+} as const;
+
+export const UPLOAD_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['cid'],
+  properties: {
+    cid: { type: 'string', description: 'IPFS CID of the uploaded content' }
+  }
+} as const;
+
 const PIN_REQUEST_BODY = {
   required: true,
   content: {
     'application/json': {
-      schema: {
-        type: 'object',
-        required: ['cid'],
-        properties: {
-          cid: { type: 'string', description: 'IPFS content identifier to pin' },
-          name: { type: 'string', description: 'Optional human-readable name' },
-          origins: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Optional peer multiaddrs to fetch from'
-          },
-          meta: {
-            type: 'object',
-            additionalProperties: { type: 'string' },
-            description: 'Optional metadata. meta.retrievalPrice gates GET /ipfs/:cid behind a paywall.'
-          }
-        }
-      }
+      schema: PIN_INPUT_SCHEMA
     }
   }
 } as const;
@@ -165,21 +208,7 @@ const PIN_STATUS_RESPONSE = {
   description: 'Pin status object (IPFS Pinning Service API)',
   content: {
     'application/json': {
-      schema: {
-        type: 'object',
-        required: ['requestid', 'status', 'created', 'pin', 'delegates'],
-        properties: {
-          requestid: { type: 'string' },
-          status: {
-            type: 'string',
-            enum: ['queued', 'pinning', 'pinned', 'failed']
-          },
-          created: { type: 'string', format: 'date-time' },
-          pin: { type: 'object' },
-          delegates: { type: 'array', items: { type: 'string' } },
-          info: { type: 'object', additionalProperties: true }
-        }
-      }
+      schema: PIN_STATUS_SCHEMA
     }
   }
 } as const;

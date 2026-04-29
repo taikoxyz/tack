@@ -2,7 +2,7 @@
 
 **Pin to IPFS. Pay with your wallet. No account needed.**
 
-Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
+Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No pinning API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
 
 Built for AI agents, developer tooling, and any machine that needs to store data on IPFS without a human creating an account first.
 
@@ -10,7 +10,7 @@ Built for AI agents, developer tooling, and any machine that needs to store data
 
 | Endpoint | URL |
 |---|---|
-| API | `https://tack.taiko.xyz` |
+| API | `https://tack.inferenceroom.ai` |
 | Health | `GET /health` |
 | Agent Card (A2A) | `GET /.well-known/agent.json` |
 | IPFS Gateway | `GET /ipfs/<cid>` |
@@ -19,13 +19,13 @@ Built for AI agents, developer tooling, and any machine that needs to store data
 
 ```bash
 # Pin content for 6 months (first call returns 402 with payment requirements)
-curl -X POST https://tack.taiko.xyz/pins \
+curl -X POST https://tack.inferenceroom.ai/pins \
   -H 'content-type: application/json' \
   -H 'X-Pin-Duration-Months: 6' \
   -d '{"cid":"bafybeigdyrzt...","name":"example.txt"}'
 
 # After x402 payment, retry with signature
-curl -X POST https://tack.taiko.xyz/pins \
+curl -X POST https://tack.inferenceroom.ai/pins \
   -H 'content-type: application/json' \
   -H 'X-Pin-Duration-Months: 6' \
   -H 'payment-signature: <x402-payment-signature>' \
@@ -33,7 +33,7 @@ curl -X POST https://tack.taiko.xyz/pins \
 # Response includes info.expiresAt and x-wallet-auth-token header
 
 # Use the owner token on authenticated routes
-curl https://tack.taiko.xyz/pins/<requestid> \
+curl https://tack.inferenceroom.ai/pins/<requestid> \
   -H 'Authorization: Bearer <x-wallet-auth-token>'
 ```
 
@@ -84,6 +84,11 @@ Tack can also store wallet-owned private objects that are not pinned to IPFS. Cr
 ## For AI Agents
 
 Tack exposes an [A2A](https://google.github.io/A2A/) agent card at `/.well-known/agent.json`. An agent with a wallet can discover Tack, pin content, and pay — no human in the loop.
+
+The repo ships [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) under `skills/` so coding agents can pick up Tack without reading the source:
+
+- [`skills/tack-pinning`](skills/tack-pinning/SKILL.md) — pin a CID, upload a file, retrieve content, manage pins, gate retrieval behind a paywall
+- [`skills/tack-usage-api`](skills/tack-usage-api/SKILL.md) — operator-only: read service-level usage and revenue metrics, and manage the API keys those endpoints require
 
 ## Limitations
 
