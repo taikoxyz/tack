@@ -9,6 +9,11 @@ Format:
 
 ## [Unreleased]
 
+## [v0.2.5] - 2026-04-29
+
+### Fixed
+- Re-publishes the v0.2.4 fix with a synced `pnpm-lock.yaml`. The v0.2.4 docker build failed with `ERR_PNPM_OUTDATED_LOCKFILE` because the lockfile's top-level dependencies block was missing the new `@x402/extensions` entry, so v0.2.4 never produced an image and the prior deploy continued serving v0.2.3. v0.2.5 fixes that and is the first build to actually carry the bazaar-discovery extension.
+
 ## [v0.2.4] - 2026-04-29
 
 ### Fixed
