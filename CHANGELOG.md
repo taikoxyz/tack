@@ -9,6 +9,21 @@ Format:
 
 ## [Unreleased]
 
+## [v0.2.6] - 2026-04-29
+
+### Fixed
+- x402 paid endpoints now also expose an `output` block in the bazaar discovery extension. The bazaar resource-service factory only emits the output info + schema when `output.example` is provided (passing `output.schema` alone is silently dropped), so v0.2.5 shipped input schemas only. v0.2.6 adds representative examples for `POST /pins` (PinStatus) and `POST /upload` (`{cid}`), and the live `payment-required` challenge now carries `extensions.bazaar.info.output` and `extensions.bazaar.schema.properties.output`. mppscan / x402scan should no longer flag output schema missing.
+
+## [v0.2.5] - 2026-04-29
+
+### Fixed
+- Re-publishes the v0.2.4 fix with a synced `pnpm-lock.yaml`. The v0.2.4 docker build failed with `ERR_PNPM_OUTDATED_LOCKFILE` because the lockfile's top-level dependencies block was missing the new `@x402/extensions` entry, so v0.2.4 never produced an image and the prior deploy continued serving v0.2.3. v0.2.5 fixes that and is the first build to actually carry the bazaar-discovery extension.
+
+## [v0.2.4] - 2026-04-29
+
+### Fixed
+- x402 paid endpoints (`POST /pins`, `POST /upload`) now declare `inputSchema` and `outputSchema` via the Bazaar discovery extension, so the resulting v2 `payment-required` challenge carries per-route schemas. mppscan.com / x402scan / Bazaar discovery validators previously flagged both endpoints as "Input schema is missing" / "Output schema is missing" because they read the live x402 challenge body, not the agent card or `/openapi.json`.
+
 ## [v0.2.3] - 2026-04-28
 
 ### Added

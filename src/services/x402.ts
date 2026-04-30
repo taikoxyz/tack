@@ -10,6 +10,16 @@ import {
   x402HTTPResourceServer,
   x402ResourceServer
 } from '@x402/core/server';
+import {
+  bazaarResourceServerExtension,
+  declareDiscoveryExtension
+} from '@x402/extensions';
+import {
+  PIN_INPUT_SCHEMA,
+  PIN_STATUS_SCHEMA,
+  UPLOAD_INPUT_SCHEMA,
+  UPLOAD_OUTPUT_SCHEMA
+} from '../openapi';
 import type { MiddlewareHandler } from 'hono';
 import type { PaymentPayload } from '@x402/core/types';
 import { logger } from './logger';
@@ -646,6 +656,48 @@ export function createX402PaymentMiddleware(
   for (const chain of config.chains) {
     resourceServer.register(chain.network, new ExactEvmScheme());
   }
+  // Register the Bazaar discovery extension so per-route inputSchema /
+  // outputSchema declarations get embedded into the v2 402 challenge.
+  // Required by x402scan / Bazaar discovery validators.
+  resourceServer.registerExtension(bazaarResourceServerExtension);
+
+  // `method` is omitted intentionally — bazaarResourceServerExtension
+  // enriches it from the route key ('POST /pins', 'POST /upload') at
+  // declaration time. The TypeScript input type also strips it.
+  //
+  // The bazaar extension only emits the `output` block (info + schema)
+  // when `output.example` is present — schema alone is dropped. Provide a
+  // representative example for each route so discovery validators
+  // (mppscan.com, x402scan, Bazaar) see both an output sample and the
+  // attached JSON Schema.
+  const pinDiscoveryExtension = declareDiscoveryExtension({
+    bodyType: 'json',
+    inputSchema: PIN_INPUT_SCHEMA,
+    output: {
+      schema: PIN_STATUS_SCHEMA,
+      example: {
+        requestid: '01HXY1Q6FZ4F8Y2ZK7M0E2K9DJ',
+        status: 'queued',
+        created: '2026-04-29T00:00:00Z',
+        pin: {
+          cid: 'bafybeibwzifw52ttrkqlikfzext5akxu7lz4xiwjgwzmqcpdzmp3n5z3y4',
+          name: 'example.json',
+          origins: [],
+          meta: {}
+        },
+        delegates: []
+      }
+    }
+  });
+
+  const uploadDiscoveryExtension = declareDiscoveryExtension({
+    bodyType: 'form-data',
+    inputSchema: UPLOAD_INPUT_SCHEMA,
+    output: {
+      schema: UPLOAD_OUTPUT_SCHEMA,
+      example: { cid: 'bafybeibwzifw52ttrkqlikfzext5akxu7lz4xiwjgwzmqcpdzmp3n5z3y4' }
+    }
+  });
 
   const routes: RoutesConfig = {
     'POST /pins': {
@@ -663,6 +715,7 @@ export function createX402PaymentMiddleware(
       })),
       description: 'Create IPFS pin',
       mimeType: 'application/json',
+      extensions: pinDiscoveryExtension,
       unpaidResponseBody: makeUnpaidResponseBody('Pin a CID to IPFS.', config),
       settlementFailedResponseBody: makeSettlementFailedResponseBody()
     },
@@ -680,6 +733,7 @@ export function createX402PaymentMiddleware(
       })),
       description: 'Upload content to IPFS',
       mimeType: 'application/json',
+      extensions: uploadDiscoveryExtension,
       unpaidResponseBody: makeUnpaidResponseBody('Upload content to IPFS and pin it.'),
       settlementFailedResponseBody: makeSettlementFailedResponseBody()
     },

@@ -1,6 +1,6 @@
 {
   "name": "tack",
-  "version": "0.2.3",
+  "version": "0.2.6",
   "private": true,
   "description": "Pin to IPFS, pay with your wallet. No account needed.",
   "scripts": {
@@ -21,6 +21,7 @@
     "@hono/node-server": "^1.13.8",
     "@x402/core": "^2.6.0",
     "@x402/evm": "^2.6.0",
+    "@x402/extensions": "^2.6.0",
     "@x402/hono": "^2.6.0",
     "better-sqlite3": "^11.8.1",
     "hono": "^4.7.4",

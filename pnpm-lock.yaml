@@ -17,6 +17,9 @@ importers:
       '@x402/evm':
         specifier: ^2.6.0
         version: 2.6.0(ethers@6.16.0)(typescript@5.9.3)
+      '@x402/extensions':
+        specifier: ^2.6.0
+        version: 2.6.0(ethers@6.16.0)(typescript@5.9.3)
       '@x402/hono':
         specifier: ^2.6.0
         version: 2.6.0(ethers@6.16.0)(hono@4.12.5)(typescript@5.9.3)
@@ -1241,6 +1244,7 @@ packages:
 
   mppx@0.4.7:
     resolution: {integrity: sha512-urfpeTjm8SBmUaciqrDRPY0DgD2+3RTAITRenQrHf9fgDEakQ/ccc715seuecU57WUwZx0Tw5ia0M4IfOz1O/w==}
+    deprecated: This version is deprecated. Please upgrade to 0.4.11 or later.
     hasBin: true
     peerDependencies:
       '@modelcontextprotocol/sdk': '>=1.25.0'
