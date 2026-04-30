@@ -2154,6 +2154,83 @@ describe('API integration', () => {
       expect(record!.asset_decimals).toBe(6);
     });
 
+    it('x402 private object create and renewal use private usage endpoint buckets', async () => {
+      let txCounter = 0;
+      const uniqueTxFacilitator: FacilitatorClient = {
+        ...mockFacilitator,
+        settle(paymentPayload: PaymentPayload, requirements: PaymentRequirements): Promise<{
+          success: boolean;
+          transaction: string;
+          network: string;
+          payer: string;
+        }> {
+          txCounter += 1;
+          return Promise.resolve({
+            success: true,
+            transaction: `0xprivate${txCounter}`,
+            network: requirements.network,
+            payer: extractWallet(paymentPayload)
+          });
+        }
+      };
+      const privatePaymentMiddleware = createX402PaymentMiddleware(paymentConfig, uniqueTxFacilitator, {
+        resolvePrivateObjectRenewal: (objectId) => {
+          const record = privateObjectRepository.findById(objectId);
+          return record ? { sizeBytes: record.size_bytes } : null;
+        }
+      });
+      const { paymentRepository, metricsApp } = await buildUsageHarness({
+        paymentMiddleware: privatePaymentMiddleware
+      });
+
+      const objectBody = new TextEncoder().encode('private usage memory');
+      const createRes = await paidRequest(metricsApp, 'http://localhost/private/objects', walletA, () => {
+        const form = new FormData();
+        form.append('file', new File([objectBody], 'memory.txt', { type: 'text/plain' }));
+        return {
+          method: 'POST',
+          headers: {
+            'x-content-size-bytes': String(objectBody.byteLength),
+            'x-storage-duration-months': '1'
+          },
+          body: form
+        };
+      });
+      expect(createRes.status).toBe(201);
+      const ownerToken = extractIssuedOwnerToken(createRes);
+      const created = await createRes.json() as { id: string };
+
+      const renewRes = await paidRequest(
+        metricsApp,
+        `http://localhost/private/objects/${created.id}/renew`,
+        walletA,
+        () => ({
+          method: 'POST',
+          headers: {
+            ...ownerAuthHeaders(ownerToken),
+            'x-storage-duration-months': '6'
+          }
+        })
+      );
+      expect(renewRes.status).toBe(200);
+
+      const endpoints = db
+        .prepare('SELECT endpoint FROM payments WHERE protocol = ? ORDER BY id')
+        .all('x402') as Array<{ endpoint: string }>;
+      expect(endpoints.map((row) => row.endpoint).sort()).toEqual([
+        'private_object',
+        'private_object_renewal'
+      ]);
+
+      const summary = paymentRepository.summarizeWindow({
+        start: '1970-01-01T00:00:00.000Z',
+        end: '9999-12-31T00:00:00.000Z',
+      });
+      expect(summary.byEndpoint.private_object.count).toBe(1);
+      expect(summary.byEndpoint.private_object_renewal.count).toBe(1);
+      expect(summary.byEndpoint.pin.count).toBe(0);
+    });
+
     it('MPP paid POST /pins lands a payments row with protocol=mpp', async () => {
       const { MetricsRepository } = await import('../../src/repositories/metrics-repository');
       const { PaymentRecorder } = await import('../../src/services/usage/payment-recorder');

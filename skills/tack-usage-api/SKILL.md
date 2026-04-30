@@ -11,7 +11,7 @@ Service-wide metrics for the Tack operator. **Not** for end-user pin data — th
 
 ## When to Use
 
-- Reporting daily/weekly revenue, broken down by protocol (x402 vs MPP) and endpoint (pin vs retrieval)
+- Reporting daily/weekly revenue, broken down by protocol (x402 vs MPP) and endpoint (`pin`, `retrieval`, `private_object`, `private_object_renewal`)
 - Counting requests, paid vs free vs `402` rejections
 - Tracking active vs created pin counts and total bytes
 - Tracking unique paying wallets and first-time payers in a window
@@ -96,8 +96,10 @@ curl -H "X-API-Key: $KEY" \
     "totalUsd": 12.34, "paymentCount": 42, "uniquePayers": 9,
     "byProtocol": { "x402": { "totalUsd": 10.0, "count": 30 },
                     "mpp":  { "totalUsd":  2.34, "count": 12 } },
-    "byEndpoint": { "pin":       { "totalUsd": 12.0, "count": 40 },
-                    "retrieval": { "totalUsd":  0.34, "count":  2 } }
+    "byEndpoint": { "pin":                    { "totalUsd": 12.0, "count": 40 },
+                    "retrieval":              { "totalUsd":  0.34, "count":  2 },
+                    "private_object":         { "totalUsd":  1.20, "count":  4 },
+                    "private_object_renewal": { "totalUsd":  0.40, "count":  1 } }
   },
   "requests": { "total": 500, "paid": 42, "rejected_402": 18, "free": 440 },
   "pins":     { "created": { "count": 40, "totalBytes": 12345678 },

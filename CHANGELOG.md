@@ -9,6 +9,12 @@ Format:
 
 ## [Unreleased]
 
+### Changed
+- Usage revenue stats now report private storage payments under `byEndpoint.private_object` and `byEndpoint.private_object_renewal` instead of folding them into the `pin` bucket.
+
+### Docs
+- Landing page API coverage now includes the private object create, list, read, update, delete, content, and renewal endpoints.
+
 ## [v0.2.6] - 2026-04-29
 
 ### Fixed

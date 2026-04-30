@@ -1,7 +1,7 @@
 import type { Context, Next, MiddlewareHandler } from 'hono';
 import { extractPaymentAuthorizationCredential } from './http.js';
 import { usdToAssetAmount } from './pricing.js';
-import type { PaymentResult } from './types.js';
+import type { PaymentEndpoint, PaymentResult } from './types.js';
 
 export interface MppChainContext {
   chainId: number;
@@ -10,7 +10,7 @@ export interface MppChainContext {
   /** Convert atomic amount string to USD. */
   atomicToUsd: (amountAtomic: string) => number;
   /** Decide endpoint from request path. */
-  endpointFor: (path: string) => 'pin' | 'retrieval';
+  endpointFor: (path: string) => PaymentEndpoint;
 }
 
 export interface MppPaymentRequirement {

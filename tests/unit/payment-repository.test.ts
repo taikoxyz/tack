@@ -67,7 +67,32 @@ describe('PaymentRepository', () => {
     expect(summary.byProtocol.mpp.count).toBe(1);
     expect(summary.byEndpoint.pin).toEqual({ totalUsd: 4, count: 2 });
     expect(summary.byEndpoint.retrieval).toEqual({ totalUsd: 0, count: 0 });
+    expect(summary.byEndpoint.private_object).toEqual({ totalUsd: 0, count: 0 });
+    expect(summary.byEndpoint.private_object_renewal).toEqual({ totalUsd: 0, count: 0 });
     expect(summary.uniquePayers).toBe(2);
+  });
+
+  it('summarizes private storage endpoint buckets', () => {
+    repo.insert(baseRecord({
+      id: 'private-create',
+      amount_usd: 1.25,
+      endpoint: 'private_object',
+      occurred_at: '2026-04-21T10:00:00.000Z',
+    }));
+    repo.insert(baseRecord({
+      id: 'private-renew',
+      amount_usd: 0.75,
+      endpoint: 'private_object_renewal',
+      occurred_at: '2026-04-21T11:00:00.000Z',
+    }));
+
+    const summary = repo.summarizeWindow({
+      start: '2026-04-21T00:00:00.000Z',
+      end: '2026-04-22T00:00:00.000Z',
+    });
+
+    expect(summary.byEndpoint.private_object).toEqual({ totalUsd: 1.25, count: 1 });
+    expect(summary.byEndpoint.private_object_renewal).toEqual({ totalUsd: 0.75, count: 1 });
   });
 
   it('detects first-time payers in the window', () => {
@@ -115,6 +140,8 @@ describe('PaymentRepository', () => {
       byEndpoint: {
         pin: { totalUsd: 0, count: 0 },
         retrieval: { totalUsd: 0, count: 0 },
+        private_object: { totalUsd: 0, count: 0 },
+        private_object_renewal: { totalUsd: 0, count: 0 },
       },
     });
   });

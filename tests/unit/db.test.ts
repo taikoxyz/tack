@@ -1,5 +1,6 @@
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { createDb } from '../../src/db';
 
@@ -89,6 +90,79 @@ describe('createDb', () => {
         'p1', '2026-04-21T00:00:00.000Z', '0xa', '0xb', 'bogus'
       );
     }).toThrow();
+  });
+
+  it('accepts private storage endpoint values via CHECK constraint', () => {
+    const db = createDb(':memory:');
+    const insert = db.prepare(`INSERT INTO payments (
+      id, occurred_at, protocol, chain_id, payer_wallet, asset_address, asset_decimals,
+      amount_atomic, amount_usd, endpoint
+    ) VALUES (?, ?, 'x402', 167000, ?, ?, 6, '1', 1.0, ?)`);
+
+    expect(() => insert.run(
+      'private_create',
+      '2026-04-21T00:00:00.000Z',
+      '0xa',
+      '0xb',
+      'private_object'
+    )).not.toThrow();
+    expect(() => insert.run(
+      'private_renew',
+      '2026-04-21T00:00:01.000Z',
+      '0xa',
+      '0xb',
+      'private_object_renewal'
+    )).not.toThrow();
+  });
+
+  it('migrates the legacy payments endpoint CHECK constraint', () => {
+    const tmpPath = `${tmpdir()}/tack-legacy-payments-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`;
+    try {
+      const legacy = new Database(tmpPath);
+      legacy.exec(`
+        CREATE TABLE payments (
+          id              TEXT PRIMARY KEY,
+          occurred_at     TEXT NOT NULL,
+          protocol        TEXT NOT NULL CHECK(protocol IN ('x402', 'mpp')),
+          chain_id        INTEGER NOT NULL,
+          payer_wallet    TEXT NOT NULL,
+          asset_address   TEXT NOT NULL,
+          asset_decimals  INTEGER NOT NULL,
+          amount_atomic   TEXT NOT NULL,
+          amount_usd      REAL NOT NULL,
+          endpoint        TEXT NOT NULL CHECK(endpoint IN ('pin', 'retrieval')),
+          request_id      TEXT,
+          tx_hash         TEXT,
+          pin_request_id  TEXT
+        );
+        INSERT INTO payments (
+          id, occurred_at, protocol, chain_id, payer_wallet, asset_address, asset_decimals,
+          amount_atomic, amount_usd, endpoint
+        ) VALUES (
+          'old_pin', '2026-04-21T00:00:00.000Z', 'x402', 167000,
+          '0xa', '0xb', 6, '1', 1.0, 'pin'
+        );
+      `);
+      legacy.close();
+
+      const db = createDb(tmpPath);
+      const preserved = (db.prepare('SELECT COUNT(*) AS n FROM payments WHERE id = ?').get('old_pin') as { n: number }).n;
+      expect(preserved).toBe(1);
+      expect(() => {
+        db.prepare(`INSERT INTO payments (
+          id, occurred_at, protocol, chain_id, payer_wallet, asset_address, asset_decimals,
+          amount_atomic, amount_usd, endpoint
+        ) VALUES (?, ?, 'mpp', 4217, ?, ?, 6, '1', 1.0, 'private_object')`).run(
+          'new_private',
+          '2026-04-21T00:00:01.000Z',
+          '0xa',
+          '0xb'
+        );
+      }).not.toThrow();
+      db.close();
+    } finally {
+      rmSync(tmpPath, { force: true });
+    }
   });
 
   it('uniq_payments_protocol_txhash partial-unique index dedups when tx_hash present', () => {

@@ -23,7 +23,11 @@ import {
 import type { MiddlewareHandler } from 'hono';
 import type { PaymentPayload } from '@x402/core/types';
 import { logger } from './logger';
-import type { PaymentResult, PaymentSettlementCallbacks } from './payment/types.js';
+import {
+  paymentEndpointForPath,
+  type PaymentResult,
+  type PaymentSettlementCallbacks
+} from './payment/types.js';
 import {
   calculatePriceUsd,
   parseDurationMonths,
@@ -579,7 +583,7 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
             }
 
             // Endpoint: derive from path (same convention as MPP middleware).
-            const endpoint: 'pin' | 'retrieval' = c.req.path.startsWith('/ipfs/') ? 'retrieval' : 'pin';
+            const endpoint = paymentEndpointForPath(c.req.path);
 
             // x402 facilitators emit the tx hash in the settlement response header.
             // The SDK's resource-server settle path uses `PAYMENT-RESPONSE` (uppercase);
