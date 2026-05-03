@@ -361,7 +361,7 @@ const app = createApp({
   usageApiKeys,
   agentCard: {
     name: 'Tack',
-    description: 'Pin to IPFS, pay with your wallet. No account needed.',
+    description: 'Storage for agents. Upload files or pin CIDs, pay per use — no account or API key required.',
     version: appVersion,
     x402Chains: x402Chains.map((chain) => ({
       network: chain.network,

@@ -849,7 +849,7 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       protocol: 'a2a',
       version: '1.0',
       name: agent?.name ?? 'Tack',
-      description: agent?.description ?? 'Pin to IPFS, pay with your wallet. No account needed.',
+      description: agent?.description ?? 'Storage for agents. Upload files or pin CIDs, pay per use — no account or API key required.',
       endpoint: origin,
       openapi: '/openapi.json',
       capabilities: {

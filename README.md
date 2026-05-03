@@ -1,6 +1,6 @@
 # Tack
 
-**Pin to IPFS. Pay with your wallet. No account needed.**
+**Storage for agents. Upload files or pin CIDs, pay per use — no account or API key required.**
 
 Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No pinning API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
 
