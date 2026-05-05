@@ -9,12 +9,12 @@ function normalizeSectionName(input) {
     return null;
   }
 
-  const value = basename(raw);
-  if (/^v\d+\.\d+\.\d+$/.test(value)) {
-    return value;
-  }
+  return basename(raw);
+}
 
-  return value;
+function candidateNames(name) {
+  const trimmed = name.replace(/^v/, '');
+  return new Set([name, trimmed, `v${trimmed}`]);
 }
 
 function parseSections(markdown) {
@@ -22,8 +22,12 @@ function parseSections(markdown) {
   const sections = [];
   let current = null;
 
+  // Matches both legacy `## [v0.2.6] - 2026-04-29` and release-please's
+  // `## [0.2.7](https://compare-url) (2026-05-05)` heading formats.
+  const headingRegex = /^## \[(.+?)\](?:\([^)]*\))?(?:[\s\-]+.+)?$/;
+
   for (const line of lines) {
-    const match = line.match(/^## \[(.+?)\](?: - .+)?$/);
+    const match = line.match(headingRegex);
 
     if (match) {
       if (current) {
@@ -76,7 +80,8 @@ if (!sectionName) {
 
 const changelog = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
 const sections = parseSections(changelog);
-const match = sections.find((section) => section.name === sectionName);
+const acceptableNames = candidateNames(sectionName);
+const match = sections.find((section) => acceptableNames.has(section.name));
 
 if (!match) {
   console.error(
