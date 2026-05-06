@@ -32,6 +32,7 @@ import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromP
 import { extractPrivateObjectRenewalIdFromPath } from './services/payment/http';
 import type { AgentCardConfig, PinStatusValue } from './types';
 import { faviconSvg, landingPageHtml } from './landing';
+import { privacyPolicyHtml, refundPolicyHtml, termsOfServiceHtml } from './legal-pages';
 import {
   buildOpenApiDocument,
   PIN_INPUT_SCHEMA,
@@ -580,6 +581,18 @@ export function createApp(services: AppServices): Hono<AppEnv> {
       'Content-Type': 'image/svg+xml; charset=utf-8',
       'Cache-Control': 'public, max-age=86400'
     });
+  });
+
+  app.get('/terms', (c) => {
+    return c.html(termsOfServiceHtml());
+  });
+
+  app.get('/privacy', (c) => {
+    return c.html(privacyPolicyHtml());
+  });
+
+  app.get('/refunds', (c) => {
+    return c.html(refundPolicyHtml());
   });
 
   app.use('*', async (c, next) => {
