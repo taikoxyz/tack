@@ -1979,6 +1979,9 @@ export function landingPageHtml(): string {
       <div class="footer-links">
         <a href="${o}/health">status</a>
         <a href="${o}/.well-known/agent.json" target="_blank" rel="noopener">agent card</a>
+        <a href="${o}/terms">terms</a>
+        <a href="${o}/privacy">privacy</a>
+        <a href="${o}/refunds">refunds</a>
         <a href="https://www.x402.org/" target="_blank" rel="noopener">x402</a>
         <a href="https://mpp.dev/" target="_blank" rel="noopener">mpp</a>
       </div>
