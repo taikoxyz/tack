@@ -28,7 +28,7 @@ import {
 import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromPinPayload } from './services/payment/pricing';
 import type { AgentCardConfig, PinStatusValue } from './types';
 import { faviconSvg, landingPageHtml } from './landing';
-import { privacyPolicyHtml, refundPolicyHtml, termsOfServiceHtml } from './legal-pages';
+import { type LegalConfig, privacyPolicyHtml, refundPolicyHtml, termsOfServiceHtml } from './legal-pages';
 import {
   buildOpenApiDocument,
   PIN_INPUT_SCHEMA,
@@ -473,16 +473,32 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     });
   });
 
+  const tackLegalConfig: LegalConfig = {
+    productName: 'Tack',
+    businessEntityName: 'Taiko Labs Limited',
+    contactEmail: 'fund@taiko.xyz',
+    effectiveDate: 'May 8, 2026',
+    homeUrl: process.env.LANDING_URL ?? 'https://tack.inferenceroom.ai',
+    serviceDescription: 'IPFS pinning and retrieval service for AI agents and developers',
+    serviceChannels: 'website and API',
+    governingLaw: 'the Cayman Islands',
+    venue: 'Grand Cayman, Cayman Islands',
+    liabilityCapAmount: 'one hundred U.S. dollars (USD $100)',
+    hasIpfs: true,
+    hasKyc: false,
+    hasNft: false,
+  };
+
   app.get('/terms', (c) => {
-    return c.html(termsOfServiceHtml());
+    return c.html(termsOfServiceHtml(tackLegalConfig));
   });
 
   app.get('/privacy', (c) => {
-    return c.html(privacyPolicyHtml());
+    return c.html(privacyPolicyHtml(tackLegalConfig));
   });
 
   app.get('/refunds', (c) => {
-    return c.html(refundPolicyHtml());
+    return c.html(refundPolicyHtml(tackLegalConfig));
   });
 
   app.use('*', async (c, next) => {
