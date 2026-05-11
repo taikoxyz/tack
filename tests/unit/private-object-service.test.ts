@@ -104,7 +104,7 @@ describe('PrivateObjectService', () => {
     await expect(storage.get(created.storage_key)).rejects.toThrow();
   });
 
-  it('extends object expiration when renewed', async () => {
+  it('extends object expiration from the existing expiry when renewed', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
     const created = await service.createObject({
@@ -118,10 +118,36 @@ describe('PrivateObjectService', () => {
     vi.setSystemTime(new Date('2026-04-24T12:00:00.000Z'));
     const renewed = service.renewObject(created.id, owner, 6);
 
-    expect(renewed.expires_at).toBe('2026-10-24T12:00:00.000Z');
+    // existing expires_at = 2026-05-23T12:00 (one month from create), so
+    // renewing for 6 months extends to 2026-11-23T12:00 — not now+6.
+    expect(renewed.expires_at).toBe('2026-11-23T12:00:00.000Z');
   });
 
-  it('renews against the accepted request time when persistence is deferred', async () => {
+  it('never shortens retention when renewed with a duration shorter than what remains', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
+    const created = await service.createObject({
+      owner,
+      content: bytes('renew').buffer,
+      contentType: 'text/plain',
+      durationMonths: 24,
+      paymentStatus: 'paid'
+    });
+
+    // Renew the 24-month object one day later with the default 1-month
+    // duration. Retention must extend from the existing expiry, never
+    // collapse to now + 1 month.
+    vi.setSystemTime(new Date('2026-04-24T12:00:00.000Z'));
+    const renewed = service.renewObject(created.id, owner, 1);
+
+    expect(created.expires_at).toBe('2028-04-23T12:00:00.000Z');
+    expect(renewed.expires_at).toBe('2028-05-23T12:00:00.000Z');
+    expect(new Date(renewed.expires_at!).getTime()).toBeGreaterThan(
+      new Date(created.expires_at!).getTime()
+    );
+  });
+
+  it('records the accepted request time on `updated` even when persistence is deferred', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-23T12:00:00.000Z'));
     const created = await service.createObject({
@@ -132,11 +158,15 @@ describe('PrivateObjectService', () => {
       paymentStatus: 'paid'
     });
 
-    const acceptedAt = new Date('2026-05-23T11:59:59.000Z');
-    vi.setSystemTime(new Date('2026-05-23T12:00:01.000Z'));
+    // The renewal is accepted while the object is still visible, but the
+    // x402 success callback persists later. `updated` must reflect the
+    // moment the request was accepted, not the wall clock at persistence.
+    const acceptedAt = new Date('2026-05-01T12:00:00.000Z');
+    vi.setSystemTime(new Date('2026-05-01T12:00:05.000Z'));
     const renewed = service.renewObject(created.id, owner, 6, acceptedAt);
 
-    expect(renewed.expires_at).toBe('2026-11-23T11:59:59.000Z');
+    expect(renewed.updated).toBe('2026-05-01T12:00:00.000Z');
+    expect(renewed.expires_at).toBe('2026-11-23T12:00:00.000Z');
   });
 
   it('lists only paid visible objects for the owner', async () => {

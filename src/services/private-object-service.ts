@@ -78,9 +78,15 @@ function renewedRecord(
   durationMonths: number,
   now = new Date()
 ): StoredPrivateObjectRecord {
+  // Anchor the new expiry on the later of `now` or the existing expiry so a
+  // paid renewal can never shorten retention. If a client renews a 24-month
+  // object with the default 1-month duration, the new expiry is
+  // existing_expiry + 1 month, not now + 1 month.
+  const existingExpires = existing.expires_at ? new Date(existing.expires_at) : null;
+  const anchor = existingExpires && existingExpires > now ? existingExpires : now;
   return {
     ...existing,
-    expires_at: computeExpiresAt(durationMonths, now),
+    expires_at: computeExpiresAt(durationMonths, anchor),
     updated: now.toISOString()
   };
 }

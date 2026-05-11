@@ -741,6 +741,19 @@ export function createApp(services: AppServices): Hono<AppEnv> {
     await next();
   });
 
+  // Private-object creation needs a declared size before any pre-handler
+  // payment settlement. MPP settles upfront in middleware; without this guard
+  // a missing/invalid `x-content-size-bytes` would fall back to size=0,
+  // charge the $0.001 floor, and then 400 in the handler — paid customer,
+  // no object stored. x402 is safe (settles post-handler) but is gated here
+  // too so both protocols share one truth.
+  app.use('/private/objects', async (c, next) => {
+    if (c.req.method === 'POST') {
+      parseRequiredObjectSize(c.req.raw.headers);
+    }
+    await next();
+  });
+
   // MPP middleware runs first on payment-gated routes
   // MPP middleware only on routes that require payment (not /pins/* which are owner endpoints)
   if (services.mppMiddleware) {

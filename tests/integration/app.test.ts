@@ -1579,6 +1579,34 @@ describe('API integration', () => {
       expect(await contentRes.text()).toBe('mpp private memory');
     });
 
+    it('rejects MPP private object creation without x-content-size-bytes before charging', async () => {
+      // Regression: a missing header used to fall back to size=0, which
+      // collapsed the price to the $0.001 floor. MPP settles upfront, so
+      // the request was billed before the route handler 400'd on the
+      // missing header. Now a pre-MPP middleware rejects the request
+      // synchronously and `mppx.charge` is never invoked.
+      const stub = createStubMppxHandler();
+      const dualApp = buildDualApp(stub);
+      const objectBody = new TextEncoder().encode('mpp private memory');
+      const form = new FormData();
+      form.append('file', new File([objectBody], 'mpp.txt', { type: 'text/plain' }));
+
+      const res = await dualApp.request(
+        new Request('http://localhost/private/objects', {
+          method: 'POST',
+          headers: {
+            'authorization': 'Payment stub-credential'
+            // intentionally omit x-content-size-bytes
+          },
+          body: form
+        })
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'X-Content-Size-Bytes header is required' });
+      expect(stub.chargeCalls).toHaveLength(0);
+    });
+
     it('rejects MPP private renewals without owner auth before charging', async () => {
       const stub = createStubMppxHandler();
       const dualApp = buildDualApp(stub);

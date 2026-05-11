@@ -300,6 +300,9 @@ async function resolveMppRequirement(c: Context): Promise<{ amount: string; reci
   }
 
   if (c.req.path === '/private/objects' && c.req.method === 'POST') {
+    // `x-content-size-bytes` presence is enforced by a pre-MPP middleware in
+    // app.ts so the request fails fast (400) before mppx settles a $0.001
+    // floor charge for a payload we'd reject anyway.
     const sizeBytes = parseNonNegativeInteger(c.req.header('x-content-size-bytes')) ?? 0;
     const durationMonths = parseDurationMonths(
       c.req.header('x-storage-duration-months'),
