@@ -682,6 +682,23 @@ describe('API integration', () => {
     expect(metadata.expiresAt).toBe(created.expiresAt);
   });
 
+  it('returns a 4xx (not 500) for malformed percent-encoding in private object renew paths', async () => {
+    // Regression: previously the renewal-auth middleware decoded the object
+    // id with unguarded decodeURIComponent, so a malformed escape (e.g. %ZZ)
+    // raised a URIError and surfaced as a generic 500. The shared
+    // extractor now returns null on bad escapes and the middleware lets
+    // Hono's normal not-found / auth handling produce a 4xx instead.
+    const ownerToken = createWalletAuthToken(walletA, walletAuthConfig).token;
+    const res = await app.request(
+      new Request('http://localhost/private/objects/%ZZ/renew', {
+        method: 'POST',
+        headers: ownerAuthHeaders(ownerToken)
+      })
+    );
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+  });
+
   it('hides private objects from another wallet', async () => {
     const objectBody = new TextEncoder().encode('secret');
     const createRes = await paidRequest(app, 'http://localhost/private/objects', walletA, () => {

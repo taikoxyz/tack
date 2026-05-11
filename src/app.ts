@@ -29,6 +29,7 @@ import {
 } from './services/x402';
 import type { WalletLoginService } from './services/wallet-login';
 import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromPinPayload } from './services/payment/pricing';
+import { extractPrivateObjectRenewalIdFromPath } from './services/payment/http';
 import type { AgentCardConfig, PinStatusValue } from './types';
 import { faviconSvg, landingPageHtml } from './landing';
 import {
@@ -200,14 +201,6 @@ function toPrivateObjectResponse(record: StoredPrivateObjectRecord): Record<stri
   };
 }
 
-function getPrivateObjectRenewalId(path: string): string | null {
-  const match = /^\/private\/objects\/([^/]+)\/renew$/.exec(path);
-  if (!match?.[1]) {
-    return null;
-  }
-
-  return decodeURIComponent(match[1]);
-}
 
 function parseRequiredObjectSize(headers: Headers): number {
   const raw = headers.get('x-content-size-bytes');
@@ -730,7 +723,7 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   // Private renewals need owner authorization before any pre-handler payment settlement.
   app.use('/private/objects/*', async (c, next) => {
     if (c.req.method === 'POST') {
-      const objectId = getPrivateObjectRenewalId(c.req.path);
+      const objectId = extractPrivateObjectRenewalIdFromPath(c.req.path);
       if (objectId) {
         const privateObjects = requirePrivateObjectService(services);
         const owner = requireOwnerWallet(c);

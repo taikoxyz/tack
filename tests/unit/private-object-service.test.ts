@@ -35,6 +35,38 @@ describe('PrivateObjectService', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it('uses a single clock read for created, updated, and the expires_at anchor', async () => {
+    // Regression: createObject previously called `new Date()` twice — once
+    // for `created`/`updated` and once inside `computeExpiresAt(undefined)`.
+    // The two reads drifted by a few microseconds, so `created` and the
+    // base of `expires_at` were misaligned. Both should now derive from
+    // the same instant: expires_at minus durationMonths === created.
+    const created = await service.createObject({
+      owner,
+      content: bytes('clock').buffer,
+      contentType: 'text/plain',
+      durationMonths: 1,
+      paymentStatus: 'paid'
+    });
+
+    expect(created.created).toBe(created.updated);
+    expect(created.expires_at).toBeTruthy();
+
+    // expires_at is exactly one month after `created`. Reconstruct the
+    // anchor by subtracting one month and assert it matches `created`.
+    const expires = new Date(created.expires_at!);
+    const anchor = new Date(Date.UTC(
+      expires.getUTCFullYear(),
+      expires.getUTCMonth() - 1,
+      expires.getUTCDate(),
+      expires.getUTCHours(),
+      expires.getUTCMinutes(),
+      expires.getUTCSeconds(),
+      expires.getUTCMilliseconds()
+    ));
+    expect(anchor.toISOString()).toBe(created.created);
+  });
+
   it('stores and reads a paid private object for the owner', async () => {
     const created = await service.createObject({
       owner,
