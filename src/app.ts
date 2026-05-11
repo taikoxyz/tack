@@ -968,6 +968,19 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
       throw new HTTPException(404, { message: 'wallet login is not enabled' });
     }
 
+    // SIWE's domain-binding property is the whole point of the protocol —
+    // a signed challenge MUST be tied to this server's true origin so a
+    // signature obtained for `attacker.com` can't be redeemed here. We
+    // refuse to issue challenges when the operator hasn't configured a
+    // trusted origin via PUBLIC_BASE_URL, because falling back to the
+    // request's Host header would let an attacker mint phishable SIWE
+    // messages bound to any domain they control.
+    if (!publicBaseUrl) {
+      throw new HTTPException(503, {
+        message: 'wallet login is not configured: set PUBLIC_BASE_URL'
+      });
+    }
+
     const body = await parseJsonBody(c);
     if (!body || typeof body !== 'object') {
       throw new ValidationError('Payload must be an object');
@@ -977,13 +990,12 @@ Machine-readable A2A agent card: GET /.well-known/agent.json
     const address = typeof payload.address === 'string' ? payload.address : '';
     const network = typeof payload.network === 'string' ? payload.network : undefined;
     const chainId = typeof payload.chainId === 'number' ? payload.chainId : undefined;
-    const origin = publicBaseUrl ?? new URL(c.req.url).origin;
 
     const challenge = services.walletLoginService.createChallenge({
       address,
       network,
       chainId,
-      origin
+      origin: publicBaseUrl
     });
 
     return c.json(challenge, 201, { 'Cache-Control': 'no-store' });

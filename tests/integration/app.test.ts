@@ -498,8 +498,12 @@ describe('API integration', () => {
   });
 
   it('exchanges an OWS-compatible wallet signature for an owner token', async () => {
+    // /auth/challenge requires PUBLIC_BASE_URL so the SIWE message's domain
+    // is bound to this server's true origin (Codex P1 #3220390278). Build a
+    // dedicated app with publicBaseUrl set to exercise the happy path.
+    const siweApp = buildApp({ publicBaseUrl: 'https://tack.test' });
     const account = privateKeyToAccount(`0x${'3'.repeat(64)}`);
-    const challengeRes = await app.request(
+    const challengeRes = await siweApp.request(
       new Request('http://localhost/auth/challenge', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -513,9 +517,12 @@ describe('API integration', () => {
     const challenge = await challengeRes.json() as { message: string; network: string; chainId: number };
     expect(challenge.network).toBe('eip155:8453');
     expect(challenge.chainId).toBe(8453);
+    // SIWE message must be bound to publicBaseUrl's host, not the Host header.
+    expect(challenge.message).toContain('tack.test wants you to sign in');
+    expect(challenge.message).toContain('URI: https://tack.test');
 
     const signature = await account.signMessage({ message: challenge.message });
-    const tokenRes = await app.request(
+    const tokenRes = await siweApp.request(
       new Request('http://localhost/auth/token', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -531,6 +538,25 @@ describe('API integration', () => {
     expect(tokenBody.wallet).toBe(account.address.toLowerCase());
     expect(tokenBody.token).toBeTruthy();
     expect(tokenRes.headers.get(WALLET_AUTH_TOKEN_RESPONSE_HEADER)).toBe(tokenBody.token);
+  });
+
+  it('refuses SIWE challenges when PUBLIC_BASE_URL is not configured', async () => {
+    // Without publicBaseUrl, falling back to the Host header would let an
+    // attacker mint phishable SIWE messages bound to any domain — refuse
+    // with 503 so the operator must configure a trusted origin.
+    const account = privateKeyToAccount(`0x${'4'.repeat(64)}`);
+    const challengeRes = await app.request(
+      new Request('http://localhost/auth/challenge', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          address: account.address,
+          network: 'eip155:8453'
+        })
+      })
+    );
+    expect(challengeRes.status).toBe(503);
+    expect(await challengeRes.text()).toContain('PUBLIC_BASE_URL');
   });
 
   it('uploads and fetches IPFS content', async () => {
