@@ -1,5 +1,31 @@
 export type PaymentProtocol = 'x402' | 'mpp';
-export type PaymentEndpoint = 'pin' | 'retrieval';
+export const PAYMENT_ENDPOINTS = [
+  'pin',
+  'retrieval',
+  'private_object',
+  'private_object_renewal',
+] as const;
+export type PaymentEndpoint = typeof PAYMENT_ENDPOINTS[number];
+
+export function isPaymentEndpoint(value: string): value is PaymentEndpoint {
+  return (PAYMENT_ENDPOINTS as readonly string[]).includes(value);
+}
+
+export function paymentEndpointForPath(path: string): PaymentEndpoint {
+  if (path.startsWith('/ipfs/')) {
+    return 'retrieval';
+  }
+
+  if (path === '/private/objects') {
+    return 'private_object';
+  }
+
+  if (/^\/private\/objects\/[^/]+\/renew$/.test(path)) {
+    return 'private_object_renewal';
+  }
+
+  return 'pin';
+}
 
 /**
  * Outcome of a successful payment, set on Hono's request context as
@@ -34,4 +60,9 @@ export interface PaymentResult {
   assetDecimals?: number;
   endpoint?: PaymentEndpoint;
   txHash?: string;
+}
+
+export interface PaymentSettlementCallbacks {
+  onSettlementSuccess?: () => void | Promise<void>;
+  onSettlementFailure?: () => void | Promise<void>;
 }

@@ -82,6 +82,14 @@ describe('UsageMetricsService', () => {
       occurred_at: '2026-04-22T15:00:00.000Z',
     }));
     payments.insert(basePayment({
+      id: 'p3',
+      protocol: 'x402',
+      amount_usd: 0.75,
+      payer_wallet: '0xddd',
+      endpoint: 'private_object',
+      occurred_at: '2026-04-22T16:00:00.000Z',
+    }));
+    payments.insert(basePayment({
       id: 'outside',
       amount_usd: 100,
       payer_wallet: '0xccc',
@@ -114,25 +122,27 @@ describe('UsageMetricsService', () => {
     });
     expect(summary.generatedAt).toBe('2026-04-28T15:30:00.000Z');
     expect(summary.revenue).toEqual({
-      totalUsd: 4,
-      paymentCount: 2,
-      uniquePayers: 2,
+      totalUsd: 4.75,
+      paymentCount: 3,
+      uniquePayers: 3,
       byProtocol: {
-        x402: { totalUsd: 1.5, count: 1 },
+        x402: { totalUsd: 2.25, count: 2 },
         mpp: { totalUsd: 2.5, count: 1 },
       },
       byEndpoint: {
         pin: { totalUsd: 1.5, count: 1 },
         retrieval: { totalUsd: 2.5, count: 1 },
+        private_object: { totalUsd: 0.75, count: 1 },
+        private_object_renewal: { totalUsd: 0, count: 0 },
       },
     });
     expect(summary.requests).toEqual({ total: 2, paid: 1, rejected_402: 1, free: 0 });
     expect(summary.pins.created).toEqual({ count: 3, totalBytes: 4071 });
     expect(summary.pins.active).toEqual({ count: 2, totalBytes: 3072 });
     expect(summary.wallets).toEqual({
-      payersInWindow: 2,
-      cumulativePayers: 3,
-      firstTimePayersInWindow: ['0xaaa', '0xbbb'],
+      payersInWindow: 3,
+      cumulativePayers: 4,
+      firstTimePayersInWindow: ['0xaaa', '0xbbb', '0xddd'],
     });
   });
 

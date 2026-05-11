@@ -29,6 +29,14 @@ describe('createMppChainContext', () => {
       const ctx = createMppChainContext(false);
       expect(ctx.endpointFor('/upload')).toBe('pin');
     });
+    it('routes private object creation to private_object', () => {
+      const ctx = createMppChainContext(false);
+      expect(ctx.endpointFor('/private/objects')).toBe('private_object');
+    });
+    it('routes private object renewals to private_object_renewal', () => {
+      const ctx = createMppChainContext(false);
+      expect(ctx.endpointFor('/private/objects/obj_123/renew')).toBe('private_object_renewal');
+    });
     it('falls back to pin for unknown paths', () => {
       const ctx = createMppChainContext(false);
       expect(ctx.endpointFor('/some-other-thing')).toBe('pin');

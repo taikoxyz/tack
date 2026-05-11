@@ -14,19 +14,19 @@ export function landingPageHtml(): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tack — Storage for agents.</title>
-  <meta name="description" content="IPFS pinning your autonomous agent calls directly. Pay-per-pin in USDC, no accounts, no API keys. Live on Taiko, Base, and Tempo." />
+  <meta name="description" content="IPFS pinning and private object storage your autonomous agent calls directly. Pay-per-use in USDC, no accounts, no API keys. Live on Taiko, Base, and Tempo." />
   <meta name="theme-color" content="#05070d" />
   <link rel="icon" href="/favicon.svg?v=tack-wordmark-20260428" type="image/svg+xml" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Tack — Storage for agents." />
-  <meta property="og:description" content="A place for your agent to keep things. IPFS pinning it calls directly — pay-per-pin, no API keys." />
+  <meta property="og:description" content="A place for your agent to keep things. IPFS pins and private objects it calls directly — pay-per-use, no API keys." />
   <meta property="og:url" content="${o}" />
   <meta property="og:site_name" content="Tack" />
 
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Tack — Storage for agents." />
-  <meta name="twitter:description" content="A place for your agent to keep things. IPFS pinning it calls directly — pay-per-pin, no API keys." />
+  <meta name="twitter:description" content="A place for your agent to keep things. IPFS pins and private objects it calls directly — pay-per-use, no API keys." />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1221,6 +1221,7 @@ export function landingPageHtml(): string {
     }
     .method-get { background: rgba(106, 227, 161, 0.1); color: var(--signal); }
     .method-post { background: rgba(167, 198, 255, 0.1); color: #a7c6ff; }
+    .method-patch { background: rgba(139, 92, 246, 0.12); color: var(--tempo-300); }
     .method-delete { background: rgba(255, 122, 89, 0.1); color: #ff7a59; }
     .api-body { flex: 1; min-width: 0; }
     .api-path {
@@ -1365,7 +1366,7 @@ export function landingPageHtml(): string {
               Storage for <em>agents</em><span class="dot">.</span>
             </h1>
             <p class="hero-body">
-              Your agent uploads a file and pays a fraction of a cent in USDC. Tack hands back an address any other agent can read. No signup, no API keys, no platform to live inside.
+              Your agent uploads a file, pins a CID, or stores private state and pays a fraction of a cent in USDC. No signup, no API keys, no platform to live inside.
             </p>
             <div class="hero-cta">
               <button class="btn-endpoint" data-copy="${o}" aria-label="Copy API endpoint">
@@ -1477,7 +1478,7 @@ export function landingPageHtml(): string {
           <li>
             <span class="ord">01</span>
             <span class="name">Long-term memory</span>
-            <span class="desc">State, embeddings, context. Recall across runs by CID.</span>
+            <span class="desc">State, embeddings, context. Recall across runs by CID or private object id.</span>
           </li>
           <li>
             <span class="ord">02</span>
@@ -1824,7 +1825,7 @@ export function landingPageHtml(): string {
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-                <span>Pins auto-expire. No recurring charges.</span>
+                <span>Pins and private objects auto-expire. No recurring charges.</span>
               </li>
               <li>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
@@ -1837,7 +1838,7 @@ export function landingPageHtml(): string {
               <div class="formula-body">
                 <code>price = clamp(sizeGB × $0.10 × months, $0.001, $50)</code>
                 <br/><br/>
-                Size is binary (1&nbsp;GB = 1,073,741,824 bytes). Duration is 1&ndash;24 months, set with <code style="background:transparent;border:0;padding:0;color:var(--pink-200);">X-Pin-Duration-Months</code>. Settlement rounds up to the next asset unit.
+                Size is binary (1&nbsp;GB = 1,073,741,824 bytes). Duration is 1&ndash;24 months, set with <code style="background:transparent;border:0;padding:0;color:var(--pink-200);">X-Pin-Duration-Months</code> for pins or <code style="background:transparent;border:0;padding:0;color:var(--pink-200);">X-Storage-Duration-Months</code> for private objects. Settlement rounds up to the next asset unit.
               </div>
             </details>
           </div>
@@ -1854,7 +1855,7 @@ export function landingPageHtml(): string {
             Standard <em>spec</em><span class="dot">.</span>
           </h2>
           <p class="section-sub">
-            IPFS Pinning Service API spec, plus <code class="mono" style="font-size:0.92em;">/upload</code>, a gateway with optional paywalls, and an A2A agent card.
+            IPFS Pinning Service API spec, plus <code class="mono" style="font-size:0.92em;">/upload</code>, wallet-owned private objects, a gateway with optional paywalls, and an A2A agent card.
           </p>
         </div>
 
@@ -1876,10 +1877,66 @@ export function landingPageHtml(): string {
             </div>
           </div>
           <div class="api-row">
+            <span class="api-method method-post">POST</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects</div>
+              <div class="api-desc">Store private bytes outside IPFS, owned by the paying wallet.</div>
+              <span class="api-tag pay">x402 · MPP</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-post">POST</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects/:objectId/renew</div>
+              <div class="api-desc">Extend retention for a private object you own.</div>
+              <span class="api-tag pay">bearer · x402 · MPP</span>
+            </div>
+          </div>
+          <div class="api-row">
             <span class="api-method method-get">GET</span>
             <div class="api-body">
               <div class="api-path">/pins</div>
               <div class="api-desc">List pins your wallet owns.</div>
+              <span class="api-tag auth">bearer</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-get">GET</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects</div>
+              <div class="api-desc">List private objects owned by your wallet.</div>
+              <span class="api-tag auth">bearer</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-get">GET</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects/:objectId</div>
+              <div class="api-desc">Read private object metadata.</div>
+              <span class="api-tag auth">bearer</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-get">GET</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects/:objectId/content</div>
+              <div class="api-desc">Read private object bytes with range and ETag support.</div>
+              <span class="api-tag auth">bearer</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-patch">PATCH</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects/:objectId</div>
+              <div class="api-desc">Update private object name or metadata.</div>
+              <span class="api-tag auth">bearer</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-delete">DELETE</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects/:objectId</div>
+              <div class="api-desc">Delete private bytes and metadata.</div>
               <span class="api-tag auth">bearer</span>
             </div>
           </div>
@@ -1920,6 +1977,14 @@ export function landingPageHtml(): string {
             <div class="api-body">
               <div class="api-path">/.well-known/agent.json</div>
               <div class="api-desc">A2A agent card. Machines discover, verify, pay.</div>
+              <span class="api-tag open">public</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-get">GET</span>
+            <div class="api-body">
+              <div class="api-path">/openapi.json</div>
+              <div class="api-desc">OpenAPI 3.1 spec covering public, paid, and owner routes.</div>
               <span class="api-tag open">public</span>
             </div>
           </div>
