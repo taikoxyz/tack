@@ -40,7 +40,15 @@ describe('PrivateObjectService', () => {
     // for `created`/`updated` and once inside `computeExpiresAt(undefined)`.
     // The two reads drifted by a few microseconds, so `created` and the
     // base of `expires_at` were misaligned. Both should now derive from
-    // the same instant: expires_at minus durationMonths === created.
+    // the same instant.
+    //
+    // Pin to a mid-month UTC date so the month-arithmetic reconstruction
+    // below isn't ambiguous on month-boundary days (e.g. Jan 31 → Feb 28
+    // would clamp forward and the inverse reconstruction can't recover the
+    // original day).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-15T12:00:00.000Z'));
+
     const created = await service.createObject({
       owner,
       content: bytes('clock').buffer,
@@ -50,21 +58,8 @@ describe('PrivateObjectService', () => {
     });
 
     expect(created.created).toBe(created.updated);
-    expect(created.expires_at).toBeTruthy();
-
-    // expires_at is exactly one month after `created`. Reconstruct the
-    // anchor by subtracting one month and assert it matches `created`.
-    const expires = new Date(created.expires_at!);
-    const anchor = new Date(Date.UTC(
-      expires.getUTCFullYear(),
-      expires.getUTCMonth() - 1,
-      expires.getUTCDate(),
-      expires.getUTCHours(),
-      expires.getUTCMinutes(),
-      expires.getUTCSeconds(),
-      expires.getUTCMilliseconds()
-    ));
-    expect(anchor.toISOString()).toBe(created.created);
+    expect(created.created).toBe('2026-06-15T12:00:00.000Z');
+    expect(created.expires_at).toBe('2026-07-15T12:00:00.000Z');
   });
 
   it('stores and reads a paid private object for the owner', async () => {
