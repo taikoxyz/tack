@@ -35,6 +35,33 @@ describe('PrivateObjectService', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it('uses a single clock read for created, updated, and the expires_at anchor', async () => {
+    // Regression: createObject previously called `new Date()` twice — once
+    // for `created`/`updated` and once inside `computeExpiresAt(undefined)`.
+    // The two reads drifted by a few microseconds, so `created` and the
+    // base of `expires_at` were misaligned. Both should now derive from
+    // the same instant.
+    //
+    // Pin to a mid-month UTC date so the month-arithmetic reconstruction
+    // below isn't ambiguous on month-boundary days (e.g. Jan 31 → Feb 28
+    // would clamp forward and the inverse reconstruction can't recover the
+    // original day).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-15T12:00:00.000Z'));
+
+    const created = await service.createObject({
+      owner,
+      content: bytes('clock').buffer,
+      contentType: 'text/plain',
+      durationMonths: 1,
+      paymentStatus: 'paid'
+    });
+
+    expect(created.created).toBe(created.updated);
+    expect(created.created).toBe('2026-06-15T12:00:00.000Z');
+    expect(created.expires_at).toBe('2026-07-15T12:00:00.000Z');
+  });
+
   it('stores and reads a paid private object for the owner', async () => {
     const created = await service.createObject({
       owner,

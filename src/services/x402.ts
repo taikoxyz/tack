@@ -28,6 +28,7 @@ import {
   type PaymentResult,
   type PaymentSettlementCallbacks
 } from './payment/types.js';
+import { extractPrivateObjectRenewalIdFromPath } from './payment/http.js';
 import {
   calculatePriceUsd,
   parseDurationMonths,
@@ -134,25 +135,6 @@ function resolveUploadSizeBytes(context: HTTPRequestContext): number {
 
 function resolvePrivateObjectSizeBytes(context: HTTPRequestContext): number {
   return parseNonNegativeInteger(context.adapter.getHeader('x-content-size-bytes')) ?? 0;
-}
-
-function extractPrivateObjectRenewalId(path: string): string | null {
-  const prefix = '/private/objects/';
-  const suffix = '/renew';
-  if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
-    return null;
-  }
-
-  const objectId = path.slice(prefix.length, -suffix.length);
-  if (objectId.length === 0 || objectId.includes('/')) {
-    return null;
-  }
-
-  try {
-    return decodeURIComponent(objectId);
-  } catch {
-    return null;
-  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -792,7 +774,7 @@ export function createX402PaymentMiddleware(
         payTo: chain.payTo,
         extra: { name: chain.usdcDomainName, version: chain.usdcDomainVersion },
         price: async (context: HTTPRequestContext) => {
-          const objectId = extractPrivateObjectRenewalId(context.path);
+          const objectId = extractPrivateObjectRenewalIdFromPath(context.path);
           const renewal = objectId ? await privateObjectRenewalResolver(objectId) : null;
           const sizeBytes = renewal?.sizeBytes ?? 0;
           const durationMonths = parseDurationMonths(

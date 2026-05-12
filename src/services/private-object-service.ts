@@ -106,7 +106,11 @@ export class PrivateObjectService {
       content: input.content,
       contentType: input.contentType
     });
-    const now = new Date().toISOString();
+    // Single clock read shared across `created`, `updated`, and the
+    // `expires_at` anchor — separate `new Date()` calls would let the
+    // expiry float a few microseconds past the creation timestamp.
+    const now = new Date();
+    const nowIso = now.toISOString();
     const record: StoredPrivateObjectRecord = {
       id,
       owner,
@@ -117,9 +121,9 @@ export class PrivateObjectService {
       storage_key: storageKey,
       meta: input.meta ?? {},
       payment_status: input.paymentStatus,
-      created: now,
-      updated: now,
-      expires_at: computeExpiresAt(input.durationMonths)
+      created: nowIso,
+      updated: nowIso,
+      expires_at: computeExpiresAt(input.durationMonths, now)
     };
 
     this.repository.create(record);

@@ -25,7 +25,7 @@ import { GatewayContentCache } from './services/content-cache';
 import { InMemoryRateLimiter } from './services/rate-limiter';
 import { logger } from './services/logger';
 import { createMppChallengeEnhancer } from './services/payment/challenge-enhancer';
-import { extractIpfsCidFromPath } from './services/payment/http';
+import { extractIpfsCidFromPath, extractPrivateObjectRenewalIdFromPath } from './services/payment/http';
 import {
   createMppInstance,
   createMppChainContext,
@@ -315,24 +315,25 @@ async function resolveMppRequirement(c: Context): Promise<{ amount: string; reci
     };
   }
 
-  const privateRenewMatch = /^\/private\/objects\/([^/]+)\/renew$/.exec(c.req.path);
-  if (privateRenewMatch && c.req.method === 'POST') {
-    const objectId = decodeURIComponent(privateRenewMatch[1] ?? '');
-    const owner = requireOwnerWalletForMppRenewal(c);
-    const record = privateObjectRepository.findVisibleByIdAndOwner(objectId, owner, new Date().toISOString());
-    if (!record) {
-      throw new HTTPException(404, { message: 'Private object was not found' });
-    }
+  if (c.req.method === 'POST') {
+    const objectId = extractPrivateObjectRenewalIdFromPath(c.req.path);
+    if (objectId) {
+      const owner = requireOwnerWalletForMppRenewal(c);
+      const record = privateObjectRepository.findVisibleByIdAndOwner(objectId, owner, new Date().toISOString());
+      if (!record) {
+        throw new HTTPException(404, { message: 'Private object was not found' });
+      }
 
-    const durationMonths = parseDurationMonths(
-      c.req.header('x-storage-duration-months'),
-      config.x402DefaultDurationMonths,
-      config.x402MaxDurationMonths
-    );
-    return {
-      amount: formatUsdAmount(calculatePriceUsd(record.size_bytes, durationMonths, paymentPricingConfig)),
-      recipient: config.mppPayTo,
-    };
+      const durationMonths = parseDurationMonths(
+        c.req.header('x-storage-duration-months'),
+        config.x402DefaultDurationMonths,
+        config.x402MaxDurationMonths
+      );
+      return {
+        amount: formatUsdAmount(calculatePriceUsd(record.size_bytes, durationMonths, paymentPricingConfig)),
+        recipient: config.mppPayTo,
+      };
+    }
   }
 
   const cidParam = extractIpfsCidFromPath(c.req.path);
