@@ -26,7 +26,7 @@ export interface LegalConfig {
   /** Dispute venue, e.g. "Grand Cayman, Cayman Islands" */
   venue: string;
   /** Aggregate liability cap clause, e.g. "one hundred U.S. dollars (USD $100)" */
-  liabilityCapAmount: string;
+  liabilityCapAmount?: string;
   /** Include KYC / AML identity-verification language (default false) */
   hasKyc?: boolean;
   /** Include NFT / token-specific IP and royalty language (default false) */
@@ -322,7 +322,7 @@ ${config.hasNft ? `
 <section class="section">
 <h2>15. Limitation of liability</h2>
 <p>To the maximum extent permitted by law, we and our affiliates, directors, employees, agents, and suppliers will not be liable for any indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of profits, revenue, data, goodwill, or business opportunity, even if advised of the possibility of such damages.</p>
-<p>Our total aggregate liability for all claims arising out of or relating to the Service or these Terms will not exceed the greater of (a)&nbsp;the amounts you paid to us in the three (3) months before the event giving rise to liability, or (b)&nbsp;${config.liabilityCapAmount}, except where applicable law prohibits such a limitation.</p>
+<p>Our total aggregate liability for all claims arising out of or relating to the Service or these Terms will not exceed the greater of (a)&nbsp;the amounts you paid to us in the three (3) months before the event giving rise to liability${config.liabilityCapAmount ? ", or (b)&nbsp;" + config.liabilityCapAmount : ""}, except where applicable law prohibits such a limitation.</p>
 </section>
 
 <section class="section">
