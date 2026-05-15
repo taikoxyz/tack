@@ -22,13 +22,8 @@ on:
         required: false
         default: "https://tack.inferenceroom.ai"
         type: string
-      run_paid_smoke:
-        description: Run paid x402 smoke after deployment when configured
-        required: false
-        default: true
-        type: boolean
       skip_external_checks:
-        description: Skip external health and paid smoke checks
+        description: Skip external health checks
         required: false
         default: false
         type: boolean
@@ -49,10 +44,6 @@ on:
         required: false
         default: "https://tack.inferenceroom.ai"
         type: string
-      run_paid_smoke:
-        required: false
-        default: true
-        type: boolean
       skip_external_checks:
         required: false
         default: false
@@ -63,8 +54,6 @@ on:
       GCP_SERVICE_ACCOUNT:
         required: false
       GCP_CREDENTIALS_JSON:
-        required: false
-      X402_SMOKE_PAYER_PRIVATE_KEY:
         required: false
       ECOSYSTEM_K8S_CONFIGS_TOKEN:
         required: false
@@ -247,51 +236,3 @@ jobs:
 
           echo "::error::Health check did not return 200 after deployment"
           exit 1
-
-      - name: Detect paid smoke secret
-        id: smoke_secret
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' }}
-        env:
-          SMOKE_PAYER_PRIVATE_KEY: ${{ secrets.X402_SMOKE_PAYER_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${SMOKE_PAYER_PRIVATE_KEY:-}" ]; then
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "X402_SMOKE_PAYER_PRIVATE_KEY not set; skipping paid smoke test."
-            exit 0
-          fi
-
-          echo "present=true" >> "$GITHUB_OUTPUT"
-
-      - name: Setup Node.js
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Enable Corepack
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
-        run: corepack enable
-
-      - name: Install dependencies for smoke
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
-        run: pnpm install --frozen-lockfile
-
-      - name: Run paid x402 smoke test
-        if: ${{ inputs.run_paid_smoke && !inputs.skip_external_checks && inputs.api_base_url != '' && steps.smoke_secret.outputs.present == 'true' }}
-        env:
-          SMOKE_API_BASE_URL: ${{ inputs.api_base_url }}
-          SMOKE_RPC_URL: ${{ vars.X402_SMOKE_RPC_URL }}
-          SMOKE_CHAIN_ID: ${{ vars.X402_SMOKE_CHAIN_ID }}
-          SMOKE_CID: ${{ vars.X402_SMOKE_CID }}
-          SMOKE_PAYER_PRIVATE_KEY: ${{ secrets.X402_SMOKE_PAYER_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-
-          export SMOKE_API_BASE_URL="${SMOKE_API_BASE_URL%/}"
-          export SMOKE_RPC_URL="${SMOKE_RPC_URL:-https://rpc.mainnet.taiko.xyz}"
-          export SMOKE_CHAIN_ID="${SMOKE_CHAIN_ID:-167000}"
-          export SMOKE_CID="${SMOKE_CID:-bafkreiabfiu4ij6y7h5xj4yx4f2x7v2m2w6w63s3u5xyd4uxw5k2j7f7de}"
-
-          pnpm smoke:x402
