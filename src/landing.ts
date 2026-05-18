@@ -2365,8 +2365,24 @@ export function landingPageHtml(): string {
           <div class="api-row">
             <span class="api-method method-get">GET</span>
             <div class="api-body">
+              <div class="api-path">/private/objects/:objectId</div>
+              <div class="api-desc">Read private object metadata.</div>
+              <span class="api-tag auth">bearer</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-get">GET</span>
+            <div class="api-body">
               <div class="api-path">/private/objects/:objectId/content</div>
               <div class="api-desc">Read the bytes, with range and ETag support.</div>
+              <span class="api-tag auth">bearer</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-patch">PATCH</span>
+            <div class="api-body">
+              <div class="api-path">/private/objects/:objectId</div>
+              <div class="api-desc">Update name or metadata.</div>
               <span class="api-tag auth">bearer</span>
             </div>
           </div>
@@ -2389,8 +2405,16 @@ export function landingPageHtml(): string {
           <div class="api-row">
             <span class="api-method method-post">POST</span>
             <div class="api-body">
-              <div class="api-path">/auth/challenge → /auth/token</div>
-              <div class="api-desc">Sign in with SIWE for a fresh bearer token.</div>
+              <div class="api-path">/auth/challenge</div>
+              <div class="api-desc">Request a SIWE challenge nonce for this wallet.</div>
+              <span class="api-tag open">public</span>
+            </div>
+          </div>
+          <div class="api-row">
+            <span class="api-method method-post">POST</span>
+            <div class="api-body">
+              <div class="api-path">/auth/token</div>
+              <div class="api-desc">Exchange the signed SIWE message for a fresh bearer token.</div>
               <span class="api-tag open">public</span>
             </div>
           </div>
