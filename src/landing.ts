@@ -331,6 +331,7 @@ export function landingPageHtml(): string {
     }
 
     .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+    .hero-endpoints { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 
     .btn-endpoint {
       padding: 0;
@@ -1031,7 +1032,8 @@ export function landingPageHtml(): string {
       line-height: 1;
       letter-spacing: -0.02em;
       color: var(--pink-300);
-      font-weight: 500;
+      font-weight: 700;
+      font-style: normal;
       margin: 10px 0 6px;
     }
     .kicker-big sup {
@@ -1446,7 +1448,7 @@ export function landingPageHtml(): string {
 
     /* ── Inference Room section (§ 08) ── */
     .ir-section {
-      --ir-cyan: #22b8d9;
+      --ir-cyan: #0891b2;
     }
     .ir-section .section-label .ord { color: var(--ir-cyan); }
     .ir-body {
@@ -1464,7 +1466,7 @@ export function landingPageHtml(): string {
       margin-top: 16px;
       padding: 13px 18px;
       border-radius: 10px;
-      border: 1px solid rgba(34, 184, 217, 0.4);
+      border: 1px solid rgba(8, 145, 178, 0.4);
       color: var(--ir-cyan);
       font-family: var(--f-mono);
       font-size: 13px;
@@ -1473,7 +1475,7 @@ export function landingPageHtml(): string {
     }
     .ir-link:hover {
       border-color: var(--ir-cyan);
-      background: rgba(34, 184, 217, 0.08);
+      background: rgba(8, 145, 178, 0.08);
     }
     .ir-link .ir-domain { color: var(--ink-50); font-weight: 500; }
     .ir-link svg { width: 13px; height: 13px; }
@@ -1650,16 +1652,28 @@ export function landingPageHtml(): string {
               Tack pins what your Agent wants the world to find, and stores what only the paying wallet should read. Two tracks, same wallet, same x402 and MPP rails, no signup and no API keys.
             </p>
             <div class="hero-cta">
-              <button class="btn-endpoint" data-copy="${o}" aria-label="Copy API endpoint">
-                <span class="btn-verb">POST</span>
-                <span class="btn-url">${o}</span>
-                <span class="btn-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2"/>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                  </svg>
-                </span>
-              </button>
+              <div class="hero-endpoints">
+                <button class="btn-endpoint" data-copy="${o}/pins" aria-label="Copy /pins endpoint">
+                  <span class="btn-verb">POST</span>
+                  <span class="btn-url">${o}/pins</span>
+                  <span class="btn-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2"/>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                  </span>
+                </button>
+                <button class="btn-endpoint" data-copy="${o}/private/objects" aria-label="Copy /private/objects endpoint">
+                  <span class="btn-verb">POST</span>
+                  <span class="btn-url">${o}/private/objects</span>
+                  <span class="btn-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2"/>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                  </span>
+                </button>
+              </div>
               <a href="#pricing" class="btn-ghost">
                 Try the pricing
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1672,15 +1686,15 @@ export function landingPageHtml(): string {
 
           <div class="hero-stats" aria-label="Stats">
             <div class="hero-stat">
-              <div class="hero-stat-label">Public&nbsp;pin</div>
-              <div class="hero-stat-value num">$0.001<span class="unit">min</span></div>
+              <div class="hero-stat-label">Pin</div>
+              <div class="hero-stat-value num">$0.001<span class="unit">/ pin</span></div>
             </div>
             <div class="hero-stat">
-              <div class="hero-stat-label">Private&nbsp;5&nbsp;MB</div>
-              <div class="hero-stat-value num">$0.0010</div>
+              <div class="hero-stat-label">Private</div>
+              <div class="hero-stat-value num">$0.0010<span class="unit">/ 5MB / 1mo</span></div>
             </div>
             <div class="hero-stat">
-              <div class="hero-stat-label">Settles&nbsp;in</div>
+              <div class="hero-stat-label">Settlement</div>
               <div class="hero-stat-value num">~30<span class="unit">s</span></div>
             </div>
           </div>
@@ -1708,7 +1722,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 01</span><span class="sep">/</span><span>Problem</span></div>
           <h2 class="section-title">
-            Pin services were built for humans. Agents need different defaults<span class="dot">.</span>
+            Pin services were built for humans. Agents need different defaults.
           </h2>
         </div>
 
@@ -1751,7 +1765,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 02</span><span class="sep">/</span><span>What to keep</span></div>
           <h2 class="section-title">
-            The two kinds of things an Agent produces<span class="dot">.</span>
+            The two kinds of things an Agent produces.
           </h2>
         </div>
 
@@ -1817,7 +1831,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 03</span><span class="sep">/</span><span>The loop</span></div>
           <h2 class="section-title">
-            The flow is the same shape for both tracks<span class="dot">.</span>
+            The flow is the same shape for both tracks.
           </h2>
         </div>
 
@@ -1876,7 +1890,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 04</span><span class="sep">/</span><span>Integrate</span></div>
           <h2 class="section-title">
-            Two endpoints, one integration<span class="dot">.</span>
+            Two endpoints, one integration.
           </h2>
           <p class="section-sub">
             The same wallet, the same x402 and MPP credentials. <code class="mono" style="font-size:0.92em;">/pins</code> publishes to IPFS, <code class="mono" style="font-size:0.92em;">/private/objects</code> keeps bytes scoped to the paying wallet.
@@ -2105,7 +2119,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 06</span><span class="sep">/</span><span>Pricing</span></div>
           <h2 class="section-title">
-            Pay for size and duration, on either track<span class="dot">.</span>
+            Pay for size and duration, on either track.
           </h2>
           <p class="section-sub">
             The slider below is the actual formula. Drag it for any object, public pin or private storage, and the price updates the same way. Numbers round up to the nearest USDC atomic unit at settlement.
@@ -2240,7 +2254,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 07</span><span class="sep">/</span><span>API</span></div>
           <h2 class="section-title">
-            The full surface, pin endpoints and private object endpoints<span class="dot">.</span>
+            The full surface, pin endpoints and private object endpoints.
           </h2>
           <p class="section-sub">
             IPFS Pinning Service API spec on the pin track, a parallel wallet-owned private object track, a gateway with optional paywalls, and an A2A agent card. SIWE issues bearer tokens for owner routes.
@@ -2388,7 +2402,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 08</span><span class="sep">/</span><span>Where this lives</span></div>
           <h2 class="section-title">
-            Tack is the first product in Inference Room<span class="dot">.</span>
+            Tack is the first product in Inference Room.
           </h2>
         </div>
 
@@ -2418,7 +2432,7 @@ export function landingPageHtml(): string {
         <div class="section-head">
           <div class="section-label"><span class="ord">§ 09</span><span class="sep">/</span><span>FAQ</span></div>
           <h2 class="section-title">
-            Questions builders actually ask<span class="dot">.</span>
+            Questions builders actually ask.
           </h2>
         </div>
 
@@ -2467,7 +2481,7 @@ export function landingPageHtml(): string {
       <div class="container">
         <div class="final-cta">
           <h2>
-            A place for your Agent to keep things, both the public ones and the private ones<span class="dot">.</span>
+            A place for your Agent to keep things. The public ones and the private ones<span class="dot">.</span>
           </h2>
           <p class="sub">
             Two endpoints away.
