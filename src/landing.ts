@@ -23,12 +23,10 @@ export function landingPageHtml(): string {
   <meta property="og:description" content="A place for your Agent to keep things. Pin to IPFS or keep private, same wallet, same rails. Pay-per-use, no API keys." />
   <meta property="og:url" content="${o}" />
   <meta property="og:site_name" content="Tack" />
-  <meta property="og:image" content="${o}/og.png" />
 
-  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Tack — wallet-owned storage for AI Agents." />
   <meta name="twitter:description" content="A place for your Agent to keep things. Pin to IPFS or keep private, same wallet, same rails. Pay-per-use, no API keys." />
-  <meta name="twitter:image" content="${o}/og.png" />
 
   <script type="application/ld+json">
   {
@@ -96,7 +94,7 @@ export function landingPageHtml(): string {
         "name": "Where should AI Agents store private data that should not be public?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "On Tack's private object track. Bytes live on Tack's private volume, never pinned to IPFS, addressable only by a random object id that the paying wallet owns. Other Agents querying the id without the owning wallet's bearer token get a 404, not a 403, so the existence of the object is itself not leaked."
+          "text": "On Tack's private object track. Bytes live on Tack's private volume, never pinned to IPFS, addressable only by a random object id that the paying wallet owns. Requests without a bearer token get a 401, and another wallet's valid token gets a 404 (not a 403), so the existence of the object is itself not leaked to anyone but the owner."
         }
       },
       {
@@ -2043,16 +2041,19 @@ export function landingPageHtml(): string {
   method: <span class="s">"POST"</span>,
   headers: {
     <span class="s">"Content-Type"</span>:               <span class="s">"application/octet-stream"</span>,
+    <span class="s">"X-Content-Size-Bytes"</span>:        <span class="f">String</span>(bytes.byteLength),
     <span class="s">"X-Storage-Duration-Months"</span>:  <span class="s">"3"</span>,
     <span class="s">"X-Object-Name"</span>:              <span class="s">"agent-memory-2026-05-14"</span>,
   },
   body: bytes,
 });
 
-<span class="k">const</span> { objectId, bearer } = <span class="k">await</span> res.<span class="f">json</span>();
+<span class="c">// Object id is in the JSON body, bearer token is in the response header.</span>
+<span class="k">const</span> { id } = <span class="k">await</span> res.<span class="f">json</span>();
+<span class="k">const</span> bearer = res.<span class="f">headers</span>.<span class="f">get</span>(<span class="s">"x-wallet-auth-token"</span>);
 
 <span class="c">// Read the bytes back any time. Only the paying wallet can.</span>
-<span class="k">const</span> read = <span class="k">await</span> <span class="f">fetch</span>(<span class="s">\`\${o}/private/objects/\${objectId}/content\`</span>, {
+<span class="k">const</span> read = <span class="k">await</span> <span class="f">fetch</span>(<span class="s">\`\${o}/private/objects/\${id}/content\`</span>, {
   headers: { <span class="s">"Authorization"</span>: <span class="s">\`Bearer \${bearer}\`</span> },
 });</code></pre>
             </div>
@@ -2455,7 +2456,7 @@ export function landingPageHtml(): string {
           </details>
           <details class="faq-item">
             <summary>Where should AI Agents store private data that should not be public?</summary>
-            <p>On Tack&rsquo;s private object track. Bytes live on Tack&rsquo;s private volume, never pinned to IPFS, addressable only by a random object id that the paying wallet owns. Other Agents querying the id without the owning wallet&rsquo;s bearer token get a 404, not a 403, so the existence of the object is itself not leaked.</p>
+            <p>On Tack&rsquo;s private object track. Bytes live on Tack&rsquo;s private volume, never pinned to IPFS, addressable only by a random object id that the paying wallet owns. Requests without a bearer token get a <code>401</code>, and another wallet&rsquo;s valid token gets a <code>404</code> (not a <code>403</code>), so the existence of the object is itself not leaked to anyone but the owner.</p>
           </details>
           <details class="faq-item">
             <summary>Is Tack&rsquo;s private storage end-to-end encrypted?</summary>
