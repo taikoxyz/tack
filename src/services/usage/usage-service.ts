@@ -1,6 +1,7 @@
 import type { MetricsRepository } from '../../repositories/metrics-repository';
 import type { PaymentRepository } from '../../repositories/payment-repository';
 import type { PinRepository } from '../../repositories/pin-repository';
+import type { PaymentEndpoint } from '../payment/types';
 
 export interface UsageWindowInput {
   startDay?: string;
@@ -25,10 +26,7 @@ export interface UsageSummary {
       x402: { totalUsd: number; count: number };
       mpp: { totalUsd: number; count: number };
     };
-    byEndpoint: {
-      pin: { totalUsd: number; count: number };
-      retrieval: { totalUsd: number; count: number };
-    };
+    byEndpoint: Record<PaymentEndpoint, { totalUsd: number; count: number }>;
   };
   requests: {
     total: number;

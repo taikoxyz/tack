@@ -1,4 +1,8 @@
 import type Database from 'better-sqlite3';
+import {
+  isPaymentEndpoint,
+  type PaymentEndpoint
+} from '../services/payment/types';
 
 export interface PaymentRecord {
   id: string;
@@ -10,7 +14,7 @@ export interface PaymentRecord {
   asset_decimals: number;
   amount_atomic: string;
   amount_usd: number;
-  endpoint: 'pin' | 'retrieval';
+  endpoint: PaymentEndpoint;
   request_id: string | null;
   tx_hash: string | null;
   pin_request_id: string | null;
@@ -29,10 +33,7 @@ export interface PaymentSummary {
     x402: { totalUsd: number; count: number };
     mpp: { totalUsd: number; count: number };
   };
-  byEndpoint: {
-    pin: { totalUsd: number; count: number };
-    retrieval: { totalUsd: number; count: number };
-  };
+  byEndpoint: Record<PaymentEndpoint, { totalUsd: number; count: number }>;
 }
 
 export class PaymentRepository {
@@ -123,6 +124,8 @@ export class PaymentRepository {
       byEndpoint: {
         pin: { totalUsd: 0, count: 0 },
         retrieval: { totalUsd: 0, count: 0 },
+        private_object: { totalUsd: 0, count: 0 },
+        private_object_renewal: { totalUsd: 0, count: 0 },
       },
     };
 
@@ -135,7 +138,7 @@ export class PaymentRepository {
     }
 
     for (const row of endpointRows) {
-      if (row.endpoint === 'pin' || row.endpoint === 'retrieval') {
+      if (isPaymentEndpoint(row.endpoint)) {
         summary.byEndpoint[row.endpoint] = { totalUsd: row.total_usd, count: row.n };
       }
     }

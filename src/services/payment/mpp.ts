@@ -1,6 +1,7 @@
 import { Mppx, tempo } from 'mppx/server';
 import { tempo as tempoChain, tempoModerato as tempoModeratoChain } from 'viem/chains';
 import type { MppChainContext } from './middleware.js';
+import { paymentEndpointForPath } from './types.js';
 
 /**
  * Default TIP-20 stablecoin addresses on Tempo. These match the mppx SDK's
@@ -40,7 +41,7 @@ export function createMppChainContext(testnet: boolean): MppChainContext {
       }
       return n / divisor;
     },
-    endpointFor: (path: string) => (path.startsWith('/ipfs/') ? 'retrieval' : 'pin'),
+    endpointFor: paymentEndpointForPath,
   };
 }
 

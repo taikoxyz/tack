@@ -23,7 +23,12 @@ import {
 import type { MiddlewareHandler } from 'hono';
 import type { PaymentPayload } from '@x402/core/types';
 import { logger } from './logger';
-import type { PaymentResult } from './payment/types.js';
+import {
+  paymentEndpointForPath,
+  type PaymentResult,
+  type PaymentSettlementCallbacks
+} from './payment/types.js';
+import { extractPrivateObjectRenewalIdFromPath } from './payment/http.js';
 import {
   calculatePriceUsd,
   parseDurationMonths,
@@ -84,8 +89,13 @@ export type RetrievalPaymentResolver = (
   cid: string
 ) => RetrievalPaymentRequirement | null | Promise<RetrievalPaymentRequirement | null>;
 
+export type PrivateObjectRenewalResolver = (
+  objectId: string
+) => { sizeBytes: number } | null | Promise<{ sizeBytes: number } | null>;
+
 export interface X402PaymentMiddlewareOptions {
   resolveRetrievalPayment?: RetrievalPaymentResolver;
+  resolvePrivateObjectRenewal?: PrivateObjectRenewalResolver;
 }
 
 const PAYMENT_REQUIRED_HEADER = 'PAYMENT-REQUIRED';
@@ -121,6 +131,10 @@ function resolveUploadSizeBytes(context: HTTPRequestContext): number {
     parseNonNegativeInteger(context.adapter.getHeader('content-length')) ??
     0
   );
+}
+
+function resolvePrivateObjectSizeBytes(context: HTTPRequestContext): number {
+  return parseNonNegativeInteger(context.adapter.getHeader('x-content-size-bytes')) ?? 0;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -376,6 +390,33 @@ function extractTracingHeaders(source: Headers): Headers {
   return headers;
 }
 
+async function runSettlementCallbacks(
+  callbacks: PaymentSettlementCallbacks[] | undefined,
+  phase: 'success' | 'failure'
+): Promise<void> {
+  for (const callback of callbacks ?? []) {
+    const fn = phase === 'success' ? callback.onSettlementSuccess : callback.onSettlementFailure;
+    if (fn) {
+      await fn();
+    }
+  }
+}
+
+function chainNameFromNetwork(network: string | undefined): string {
+  switch (network) {
+    case 'eip155:8453':
+      return 'base';
+    case 'eip155:167000':
+      return 'taiko';
+    default:
+      return network ?? 'unknown';
+  }
+}
+
+function clearProvisionalPaymentResult(c: { set: (key: string, value: unknown) => void }): void {
+  c.set('paymentResult', undefined);
+}
+
 function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X402PaymentConfig): MiddlewareHandler {
   let initPromise: Promise<void> | null = httpServer.initialize();
 
@@ -425,135 +466,170 @@ function createPaymentMiddleware(httpServer: x402HTTPResourceServer, config: X40
       }
       case 'payment-verified': {
         const { paymentPayload, paymentRequirements, declaredExtensions } = result;
+        const provisionalWallet = extractWalletFromPayload(paymentPayload);
+        if (provisionalWallet) {
+          c.set('paymentResult' as any, {
+            wallet: provisionalWallet,
+            protocol: 'x402',
+            chainName: chainNameFromNetwork(paymentRequirements.network)
+          } satisfies PaymentResult);
+        }
+        c.set('paymentSettlementCallbacks' as any, []);
 
         await next();
 
         let res = c.res;
         if (res.status >= 400) {
+          await runSettlementCallbacks(c.get('paymentSettlementCallbacks' as any) as PaymentSettlementCallbacks[] | undefined, 'failure');
+          clearProvisionalPaymentResult(c);
           return;
         }
 
         const responseBody = Buffer.from(await res.clone().arrayBuffer());
         c.res = undefined;
 
+        // Only `processSettlement` itself may trigger a rollback. Once it
+        // returns success, the payment is finalized on-chain and we must
+        // NEVER run failure callbacks — those delete stored bytes, which
+        // would turn a charged payment into a charge-without-service. Any
+        // post-settlement error (callback throw, header parsing, DB write)
+        // is logged but does not roll back the payment.
+        let settleResult: Awaited<ReturnType<typeof httpServer.processSettlement>>;
         try {
-          const settleResult = await httpServer.processSettlement(
+          settleResult = await httpServer.processSettlement(
             paymentPayload,
             paymentRequirements,
             declaredExtensions,
             { request: context, responseBody }
           );
-
-          if (!settleResult.success) {
-            const { response } = settleResult;
-            const body = response.isHtml
-              ? (typeof response.body === 'string' ? response.body : '')
-              : JSON.stringify(response.body ?? {});
-
-            const errorHeaders = extractTracingHeaders(res.headers);
-            Object.entries(response.headers).forEach(([key, value]) => {
-              errorHeaders.set(key, value);
-            });
-
-            res = new Response(body, {
-              status: response.status,
-              headers: errorHeaders
-            });
-          } else {
-            Object.entries(settleResult.headers).forEach(([key, value]) => {
-              res.headers.set(key, value);
-            });
-
-            // Usage metrics: set paymentResult so PaymentRecorder can write a row.
-            // Wallet: extracted from the EIP-3009 authorization (or permit2 / from)
-            // in the payment payload — the canonical signer of the payment.
-            // If extraction fails we skip the paymentResult set entirely, leaving
-            // the handler to fall back to extractPaidWalletFromHeaders. Coercing
-            // to '' would defeat the handler's `?? requirePaidWallet(...)` guard
-            // (empty string is not nullish) and would record a payments row with
-            // payer_wallet=''.
-            const wallet = extractWalletFromPayload(paymentPayload);
-            if (!wallet) {
-              logger.warn(
-                { path: context.path, method: context.method },
-                'x402: settled payment but could not extract payer wallet from payload — skipping paymentResult; handler will fall back to header-based identity'
-              );
-              c.res = res;
-              return;
-            }
-
-            // Network / asset / amount: probed via typed helper that handles both
-            // V1 (maxAmountRequired) and V2 (amount) PaymentRequirements shapes.
-            const { network, asset: assetAddress, amountAtomic } = readPaymentRequirements(paymentRequirements);
-
-            // ChainId: parse from network string ('eip155:<chainId>').
-            const chainId = network.startsWith('eip155:') ? Number(network.slice('eip155:'.length)) : 0;
-
-            // Decimals: look up the matching chain in config; default 6.
-            const matchedChain = config.chains.find((ch) => ch.network === network);
-            const assetDecimals = matchedChain?.usdcAssetDecimals ?? 6;
-
-            // ChainName: human-readable name (matches MPP's `chainName: 'tempo'`
-            // contract). Falls back to the raw network identifier if unknown so
-            // the field is never empty.
-            const chainNameByChainId: Record<number, string> = {
-              167000: 'taiko',
-              8453: 'base',
-            };
-            const chainName = chainNameByChainId[chainId] ?? network;
-
-            const parsedAmount = Number(amountAtomic);
-            const amountUsd = Number.isFinite(parsedAmount) ? parsedAmount / 10 ** assetDecimals : 0;
-
-            if (amountAtomic === '0') {
-              logger.warn({ paymentRequirements }, 'x402: settled payment with zero amount — treating as zero in PaymentResult');
-            }
-
-            // Endpoint: derive from path (same convention as MPP middleware).
-            const endpoint: 'pin' | 'retrieval' = c.req.path.startsWith('/ipfs/') ? 'retrieval' : 'pin';
-
-            // x402 facilitators emit the tx hash in the settlement response header.
-            // The SDK's resource-server settle path uses `PAYMENT-RESPONSE` (uppercase);
-            // older/external facilitators may use the more conventional
-            // `x-payment-response`. We check all reasonable casings to be robust.
-            const txHash = ((): string | undefined => {
-              const headers = settleResult.headers;
-              const headerValue =
-                headers['PAYMENT-RESPONSE'] ??
-                headers['Payment-Response'] ??
-                headers['payment-response'] ??
-                headers['x-payment-response'] ??
-                headers['X-Payment-Response'];
-              if (!headerValue) return undefined;
-              try {
-                const decoded = JSON.parse(Buffer.from(headerValue, 'base64').toString('utf8')) as { transaction?: unknown };
-                return typeof decoded?.transaction === 'string' ? decoded.transaction : undefined;
-              } catch (err) {
-                logger.warn({ err, headerValue }, 'x402: failed to decode payment response for txHash');
-                return undefined;
-              }
-            })();
-
-            c.set('paymentResult' as any, {
-              wallet,
-              protocol: 'x402',
-              chainName,
-              chainId,
-              assetAddress,
-              assetDecimals,
-              amountAtomic,
-              amountUsd,
-              endpoint,
-              txHash,
-            } satisfies PaymentResult);
-          }
         } catch (error) {
           logger.error({ err: error, path: context.path, method: context.method }, 'unexpected settlement error');
+          await runSettlementCallbacks(c.get('paymentSettlementCallbacks' as any) as PaymentSettlementCallbacks[] | undefined, 'failure');
+          clearProvisionalPaymentResult(c);
           const fallbackHeaders = extractTracingHeaders(res.headers);
-          res = new Response(JSON.stringify(createUnexpectedSettlementFailureResponseBody()), {
+          c.res = new Response(JSON.stringify(createUnexpectedSettlementFailureResponseBody()), {
             status: 402,
             headers: fallbackHeaders
           });
+          return;
+        }
+
+        if (!settleResult.success) {
+          const { response } = settleResult;
+          await runSettlementCallbacks(c.get('paymentSettlementCallbacks' as any) as PaymentSettlementCallbacks[] | undefined, 'failure');
+          clearProvisionalPaymentResult(c);
+          const body = response.isHtml
+            ? (typeof response.body === 'string' ? response.body : '')
+            : JSON.stringify(response.body ?? {});
+
+          const errorHeaders = extractTracingHeaders(res.headers);
+          Object.entries(response.headers).forEach(([key, value]) => {
+            errorHeaders.set(key, value);
+          });
+
+          c.res = new Response(body, {
+            status: response.status,
+            headers: errorHeaders
+          });
+          return;
+        }
+
+        // Settlement succeeded on-chain. Bookkeeping below is best-effort
+        // and never rolls back. A thrown callback or bad header logs and
+        // the user still sees a 2xx (they paid; they get the resource).
+        try {
+          await runSettlementCallbacks(c.get('paymentSettlementCallbacks' as any) as PaymentSettlementCallbacks[] | undefined, 'success');
+          Object.entries(settleResult.headers).forEach(([key, value]) => {
+            res.headers.set(key, value);
+          });
+
+          // Usage metrics: set paymentResult so PaymentRecorder can write a row.
+          // Wallet: extracted from the EIP-3009 authorization (or permit2 / from)
+          // in the payment payload — the canonical signer of the payment.
+          // If extraction fails we skip the paymentResult set entirely, leaving
+          // the handler to fall back to extractPaidWalletFromHeaders. Coercing
+          // to '' would defeat the handler's `?? requirePaidWallet(...)` guard
+          // (empty string is not nullish) and would record a payments row with
+          // payer_wallet=''.
+          const wallet = extractWalletFromPayload(paymentPayload);
+          if (!wallet) {
+            logger.warn(
+              { path: context.path, method: context.method },
+              'x402: settled payment but could not extract payer wallet from payload — skipping paymentResult; handler will fall back to header-based identity'
+            );
+            c.res = res;
+            return;
+          }
+
+          // Network / asset / amount: probed via typed helper that handles both
+          // V1 (maxAmountRequired) and V2 (amount) PaymentRequirements shapes.
+          const { network, asset: assetAddress, amountAtomic } = readPaymentRequirements(paymentRequirements);
+
+          // ChainId: parse from network string ('eip155:<chainId>').
+          const chainId = network.startsWith('eip155:') ? Number(network.slice('eip155:'.length)) : 0;
+
+          // Decimals: look up the matching chain in config; default 6.
+          const matchedChain = config.chains.find((ch) => ch.network === network);
+          const assetDecimals = matchedChain?.usdcAssetDecimals ?? 6;
+
+          // ChainName: human-readable name (matches MPP's `chainName: 'tempo'`
+          // contract). Falls back to the raw network identifier if unknown so
+          // the field is never empty.
+          const chainNameByChainId: Record<number, string> = {
+            167000: 'taiko',
+            8453: 'base',
+          };
+          const chainName = chainNameByChainId[chainId] ?? network;
+
+          const parsedAmount = Number(amountAtomic);
+          const amountUsd = Number.isFinite(parsedAmount) ? parsedAmount / 10 ** assetDecimals : 0;
+
+          if (amountAtomic === '0') {
+            logger.warn({ paymentRequirements }, 'x402: settled payment with zero amount — treating as zero in PaymentResult');
+          }
+
+          // Endpoint: derive from path (same convention as MPP middleware).
+          const endpoint = paymentEndpointForPath(c.req.path);
+
+          // x402 facilitators emit the tx hash in the settlement response header.
+          // The SDK's resource-server settle path uses `PAYMENT-RESPONSE` (uppercase);
+          // older/external facilitators may use the more conventional
+          // `x-payment-response`. We check all reasonable casings to be robust.
+          const txHash = ((): string | undefined => {
+            const headers = settleResult.headers;
+            const headerValue =
+              headers['PAYMENT-RESPONSE'] ??
+              headers['Payment-Response'] ??
+              headers['payment-response'] ??
+              headers['x-payment-response'] ??
+              headers['X-Payment-Response'];
+            if (!headerValue) return undefined;
+            try {
+              const decoded = JSON.parse(Buffer.from(headerValue, 'base64').toString('utf8')) as { transaction?: unknown };
+              return typeof decoded?.transaction === 'string' ? decoded.transaction : undefined;
+            } catch (err) {
+              logger.warn({ err, headerValue }, 'x402: failed to decode payment response for txHash');
+              return undefined;
+            }
+          })();
+
+          c.set('paymentResult' as any, {
+            wallet,
+            protocol: 'x402',
+            chainName,
+            chainId,
+            assetAddress,
+            assetDecimals,
+            amountAtomic,
+            amountUsd,
+            endpoint,
+            txHash,
+          } satisfies PaymentResult);
+        } catch (error) {
+          logger.error(
+            { err: error, path: context.path, method: context.method },
+            'x402: post-settlement bookkeeping failed; payment ALREADY finalized on-chain — user is not re-billed and bytes are not deleted. Usage row may be missing; reconcile from facilitator logs if needed.'
+          );
         }
 
         c.res = res;
@@ -573,6 +649,7 @@ export function createX402PaymentMiddleware(
   }
 
   const retrievalResolver = options?.resolveRetrievalPayment;
+  const privateObjectRenewalResolver = options?.resolvePrivateObjectRenewal;
 
   // When a single facilitator is injected (tests), reuse it for every chain.
   // In production each chain gets its own HTTPFacilitatorClient.
@@ -664,8 +741,57 @@ export function createX402PaymentMiddleware(
       extensions: uploadDiscoveryExtension,
       unpaidResponseBody: makeUnpaidResponseBody('Upload content to IPFS and pin it.'),
       settlementFailedResponseBody: makeSettlementFailedResponseBody()
+    },
+    'POST /private/objects': {
+      accepts: config.chains.map((chain) => ({
+        scheme: 'exact' as const,
+        network: chain.network,
+        payTo: chain.payTo,
+        extra: { name: chain.usdcDomainName, version: chain.usdcDomainVersion },
+        price: (context: HTTPRequestContext) => {
+          const sizeBytes = resolvePrivateObjectSizeBytes(context);
+          const durationMonths = parseDurationMonths(
+            context.adapter.getHeader('x-storage-duration-months'),
+            config.defaultDurationMonths,
+            config.maxDurationMonths
+          );
+          const usdPrice = calculatePriceUsd(sizeBytes, durationMonths, config);
+          return usdToAssetAmount(usdPrice, chain.usdcAssetAddress, chain.usdcAssetDecimals);
+        }
+      })),
+      description: 'Create private object',
+      mimeType: 'application/json',
+      unpaidResponseBody: makeUnpaidResponseBody('Store a private wallet-owned object.', config),
+      settlementFailedResponseBody: makeSettlementFailedResponseBody()
     }
   };
+
+  if (privateObjectRenewalResolver) {
+    routes['POST /private/objects/[objectId]/renew'] = {
+      accepts: config.chains.map((chain) => ({
+        scheme: 'exact' as const,
+        network: chain.network,
+        payTo: chain.payTo,
+        extra: { name: chain.usdcDomainName, version: chain.usdcDomainVersion },
+        price: async (context: HTTPRequestContext) => {
+          const objectId = extractPrivateObjectRenewalIdFromPath(context.path);
+          const renewal = objectId ? await privateObjectRenewalResolver(objectId) : null;
+          const sizeBytes = renewal?.sizeBytes ?? 0;
+          const durationMonths = parseDurationMonths(
+            context.adapter.getHeader('x-storage-duration-months'),
+            config.defaultDurationMonths,
+            config.maxDurationMonths
+          );
+          const usdPrice = calculatePriceUsd(sizeBytes, durationMonths, config);
+          return usdToAssetAmount(usdPrice, chain.usdcAssetAddress, chain.usdcAssetDecimals);
+        }
+      })),
+      description: 'Renew private object storage',
+      mimeType: 'application/json',
+      unpaidResponseBody: makeUnpaidResponseBody('Renew private object retention.', config),
+      settlementFailedResponseBody: makeSettlementFailedResponseBody()
+    };
+  }
 
   if (retrievalResolver) {
     routes['GET /ipfs/[cid]'] = {

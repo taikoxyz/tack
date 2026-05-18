@@ -28,11 +28,43 @@ export function createDb(dbPath: string): Database.Database {
       created TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS wallet_auth_challenges (
+      nonce_hash TEXT PRIMARY KEY,
+      address TEXT NOT NULL,
+      network TEXT NOT NULL,
+      chain_id INTEGER NOT NULL,
+      domain TEXT NOT NULL,
+      uri TEXT NOT NULL,
+      message TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS private_objects (
+      id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      name TEXT,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      storage_key TEXT NOT NULL,
+      meta TEXT NOT NULL,
+      payment_status TEXT NOT NULL CHECK(payment_status IN ('paid', 'pending', 'failed')),
+      created TEXT NOT NULL,
+      updated TEXT NOT NULL,
+      expires_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_pins_cid ON pins(cid);
     CREATE INDEX IF NOT EXISTS idx_pins_name ON pins(name);
     CREATE INDEX IF NOT EXISTS idx_pins_status ON pins(status);
     CREATE INDEX IF NOT EXISTS idx_pins_created ON pins(created);
     CREATE INDEX IF NOT EXISTS idx_pins_owner ON pins(owner);
+    CREATE INDEX IF NOT EXISTS idx_wallet_auth_challenges_expires_at ON wallet_auth_challenges(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_private_objects_owner ON private_objects(owner);
+    CREATE INDEX IF NOT EXISTS idx_private_objects_created ON private_objects(created);
+    CREATE INDEX IF NOT EXISTS idx_private_objects_expires_at ON private_objects(expires_at);
   `);
 
   // Migration: add expires_at column if missing
@@ -54,7 +86,7 @@ export function createDb(dbPath: string): Database.Database {
       asset_decimals  INTEGER NOT NULL,
       amount_atomic   TEXT NOT NULL,
       amount_usd      REAL NOT NULL,
-      endpoint        TEXT NOT NULL CHECK(endpoint IN ('pin', 'retrieval')),
+      endpoint        TEXT NOT NULL CHECK(endpoint IN ('pin', 'retrieval', 'private_object', 'private_object_renewal')),
       request_id      TEXT,
       tx_hash         TEXT,
       pin_request_id  TEXT
@@ -84,6 +116,55 @@ export function createDb(dbPath: string): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_usage_api_keys_revoked_at ON usage_api_keys(revoked_at);
   `);
+
+  const paymentsTable = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'payments'")
+    .get() as { sql: string } | undefined;
+  if (paymentsTable?.sql && !paymentsTable.sql.includes("'private_object'")) {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_payments_occurred_at;
+      DROP INDEX IF EXISTS idx_payments_payer_occurred;
+      DROP INDEX IF EXISTS idx_payments_protocol;
+      DROP INDEX IF EXISTS uniq_payments_protocol_txhash;
+
+      ALTER TABLE payments RENAME TO payments_legacy_endpoint_check;
+
+      CREATE TABLE payments (
+        id              TEXT PRIMARY KEY,
+        occurred_at     TEXT NOT NULL,
+        protocol        TEXT NOT NULL CHECK(protocol IN ('x402', 'mpp')),
+        chain_id        INTEGER NOT NULL,
+        payer_wallet    TEXT NOT NULL,
+        asset_address   TEXT NOT NULL,
+        asset_decimals  INTEGER NOT NULL,
+        amount_atomic   TEXT NOT NULL,
+        amount_usd      REAL NOT NULL,
+        endpoint        TEXT NOT NULL CHECK(endpoint IN ('pin', 'retrieval', 'private_object', 'private_object_renewal')),
+        request_id      TEXT,
+        tx_hash         TEXT,
+        pin_request_id  TEXT
+      );
+
+      INSERT INTO payments (
+        id, occurred_at, protocol, chain_id, payer_wallet,
+        asset_address, asset_decimals, amount_atomic, amount_usd,
+        endpoint, request_id, tx_hash, pin_request_id
+      )
+      SELECT
+        id, occurred_at, protocol, chain_id, payer_wallet,
+        asset_address, asset_decimals, amount_atomic, amount_usd,
+        endpoint, request_id, tx_hash, pin_request_id
+      FROM payments_legacy_endpoint_check;
+
+      DROP TABLE payments_legacy_endpoint_check;
+
+      CREATE INDEX IF NOT EXISTS idx_payments_occurred_at ON payments(occurred_at);
+      CREATE INDEX IF NOT EXISTS idx_payments_payer_occurred ON payments(payer_wallet, occurred_at);
+      CREATE INDEX IF NOT EXISTS idx_payments_protocol ON payments(protocol);
+      CREATE UNIQUE INDEX IF NOT EXISTS uniq_payments_protocol_txhash
+        ON payments(protocol, tx_hash) WHERE tx_hash IS NOT NULL;
+    `);
+  }
 
   // Usage metrics: pin size column
   if (!columns.some((col) => col.name === 'size_bytes')) {
