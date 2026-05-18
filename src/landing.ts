@@ -1695,7 +1695,7 @@ export function landingPageHtml(): string {
             </div>
             <div class="hero-stat">
               <div class="hero-stat-label">Settlement</div>
-              <div class="hero-stat-value num">~30<span class="unit">s</span></div>
+              <div class="hero-stat-value num">~30<span class="unit" style="margin-left:0;">s</span></div>
             </div>
           </div>
         </div>
