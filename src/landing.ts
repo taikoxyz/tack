@@ -2567,13 +2567,16 @@ export function landingPageHtml(): string {
       });
     });
 
-    // Code tabs
-    var tabs = document.querySelectorAll('[role="tab"][data-tab]');
-    tabs.forEach(function (tab) {
+    // Code tabs — scoped per .code-block so each example's tabs only toggle
+    // its own panes (the page now has two .code-block examples).
+    document.querySelectorAll('[role="tab"][data-tab]').forEach(function (tab) {
+      var block = tab.closest('.code-block');
+      if (!block) return;
+      var blockTabs = block.querySelectorAll('[role="tab"][data-tab]');
       tab.addEventListener('click', function () {
         var key = tab.getAttribute('data-tab');
-        tabs.forEach(function (t) { t.setAttribute('aria-selected', t === tab ? 'true' : 'false'); });
-        document.querySelectorAll('.code-pane').forEach(function (p) {
+        blockTabs.forEach(function (t) { t.setAttribute('aria-selected', t === tab ? 'true' : 'false'); });
+        block.querySelectorAll('.code-pane').forEach(function (p) {
           var isMatch = p.id === 'code-' + key;
           p.setAttribute('data-active', isMatch ? 'true' : 'false');
           if (isMatch) { p.removeAttribute('hidden'); } else { p.setAttribute('hidden', ''); }
@@ -2582,7 +2585,7 @@ export function landingPageHtml(): string {
       tab.addEventListener('keydown', function (e) {
         if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
         e.preventDefault();
-        var list = Array.prototype.slice.call(tabs);
+        var list = Array.prototype.slice.call(blockTabs);
         var idx = list.indexOf(tab);
         var next = e.key === 'ArrowRight' ? (idx + 1) % list.length : (idx - 1 + list.length) % list.length;
         list[next].focus(); list[next].click();
