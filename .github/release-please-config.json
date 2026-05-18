@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-v-in-tag": true,
+  "include-component-in-tag": false,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "pull-request-title-pattern": "chore: release ${version}",
+  "changelog-sections": [
+    { "type": "feat", "section": "Added" },
+    { "type": "fix", "section": "Fixed" },
+    { "type": "perf", "section": "Changed" },
+    { "type": "refactor", "section": "Changed" },
+    { "type": "docs", "section": "Docs" },
+    { "type": "security", "section": "Security" },
+    { "type": "build", "section": "Other", "hidden": true },
+    { "type": "ci", "section": "Other", "hidden": true },
+    { "type": "chore", "section": "Other", "hidden": true },
+    { "type": "test", "section": "Other", "hidden": true },
+    { "type": "style", "section": "Other", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "tack"
+    }
+  }
+}

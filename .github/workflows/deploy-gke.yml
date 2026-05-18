@@ -1,6 +1,8 @@
 name: deploy-gke
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       release_tag:
@@ -63,7 +65,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-gke-${{ inputs.release_tag || github.ref_name }}
+  group: deploy-gke-${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -72,7 +74,7 @@ jobs:
     timeout-minutes: 30
     environment:
       name: production
-      url: ${{ inputs.api_base_url }}
+      url: ${{ inputs.api_base_url || 'https://tack.inferenceroom.ai' }}
 
     steps:
       - name: Checkout Tack
@@ -93,11 +95,55 @@ jobs:
               ;;
           esac
 
+      - name: Resolve deploy inputs
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_CHART_REF: ${{ inputs.chart_ref }}
+          INPUT_NAMESPACE: ${{ inputs.namespace }}
+          INPUT_API_BASE_URL: ${{ inputs.api_base_url }}
+          INPUT_SKIP_EXTERNAL_CHECKS: ${{ inputs.skip_external_checks }}
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          release_tag="${INPUT_RELEASE_TAG:-${RELEASE_EVENT_TAG:-}}"
+          if [ -z "$release_tag" ]; then
+            echo "::error::Could not resolve release_tag from inputs or release event"
+            exit 1
+          fi
+
+          if ! echo "$release_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::release_tag must match vX.Y.Z (got: $release_tag)"
+            exit 1
+          fi
+
+          chart_ref="${INPUT_CHART_REF:-main}"
+          namespace="${INPUT_NAMESPACE:-mainnet}"
+          api_base_url="${INPUT_API_BASE_URL:-https://tack.inferenceroom.ai}"
+          skip_external_checks="${INPUT_SKIP_EXTERNAL_CHECKS:-false}"
+
+          {
+            echo "release_tag=$release_tag"
+            echo "chart_ref=$chart_ref"
+            echo "namespace=$namespace"
+            echo "api_base_url=$api_base_url"
+            echo "skip_external_checks=$skip_external_checks"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Resolved deploy inputs (event=$EVENT_NAME):"
+          echo "  release_tag=$release_tag"
+          echo "  chart_ref=$chart_ref"
+          echo "  namespace=$namespace"
+          echo "  api_base_url=$api_base_url"
+          echo "  skip_external_checks=$skip_external_checks"
+
       - name: Checkout ecosystem-k8s-configs
         uses: actions/checkout@v6
         with:
           repository: taikoxyz/ecosystem-k8s-configs
-          ref: ${{ inputs.chart_ref }}
+          ref: ${{ steps.resolve.outputs.chart_ref }}
           path: ecosystem-k8s-configs
           token: ${{ secrets.ECOSYSTEM_K8S_CONFIGS_TOKEN || github.token }}
 
@@ -175,10 +221,37 @@ jobs:
           cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
           location: ${{ vars.GKE_CLUSTER_LOCATION }}
 
+      - name: Wait for container images to be published
+        env:
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          release_version="${RELEASE_TAG#v}"
+
+          for image in api kubo; do
+            uri="us-central1-docker.pkg.dev/mainnet-trailblazer/tack/${image}:${release_version}"
+            echo "Waiting for $uri to be available in Artifact Registry..."
+            for attempt in {1..40}; do
+              if gcloud artifacts docker images describe "$uri" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+                echo "Found $uri"
+                break
+              fi
+
+              if [ "$attempt" = "40" ]; then
+                echo "::error::Timed out waiting for $uri (docker.yml may have failed; check the docker workflow run)"
+                exit 1
+              fi
+
+              echo "  attempt $attempt/40: not yet present, sleeping 30s"
+              sleep 30
+            done
+          done
+
       - name: Deploy Helm release
         env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          NAMESPACE: ${{ inputs.namespace }}
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+          NAMESPACE: ${{ steps.resolve.outputs.namespace }}
           SWARM_STATIC_IP: ${{ vars.TACK_KUBO_SWARM_STATIC_IP }}
           KUBO_ANNOUNCE_ADDRESS: ${{ vars.TACK_KUBO_ANNOUNCE_ADDRESS }}
         run: |
@@ -200,16 +273,16 @@ jobs:
 
       - name: Verify rollouts
         env:
-          NAMESPACE: ${{ inputs.namespace }}
+          NAMESPACE: ${{ steps.resolve.outputs.namespace }}
         run: |
           set -euo pipefail
           kubectl -n "$NAMESPACE" rollout status statefulset/tack-api --timeout=10m
           kubectl -n "$NAMESPACE" rollout status statefulset/tack-kubo --timeout=10m
 
       - name: Wait for health check
-        if: ${{ !inputs.skip_external_checks && inputs.api_base_url != '' }}
+        if: ${{ steps.resolve.outputs.skip_external_checks != 'true' && steps.resolve.outputs.api_base_url != '' }}
         env:
-          API_BASE_URL: ${{ inputs.api_base_url }}
+          API_BASE_URL: ${{ steps.resolve.outputs.api_base_url }}
         run: |
           set -euo pipefail
           base_url="${API_BASE_URL%/}"
