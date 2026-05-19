@@ -9,11 +9,22 @@ Format:
 
 ## [Unreleased]
 
+## [v0.2.7] - 2026-05-19
+
+### Added
+- Wallet-owned **private object storage**: a parallel track to public pins where bytes are stored on Tack's private volume scoped to the paying wallet, never pinned to IPFS, and addressable only by random object id. Adds `POST /private/objects` (create, paid via x402 or MPP), `GET /private/objects` (list), `GET /private/objects/:objectId` (metadata), `GET /private/objects/:objectId/content` (read with range + ETag), `PATCH /private/objects/:objectId` (update name/meta), `DELETE /private/objects/:objectId` (early delete + refund of unused retention), and `POST /private/objects/:objectId/renew` (extend retention).
+- SIWE bearer-token flow for owner endpoints: `POST /auth/challenge` issues a nonce, `POST /auth/token` exchanges the signed message for a wallet-scoped bearer token (also emitted as `x-wallet-auth-token` on paid responses).
+
 ### Changed
 - Usage revenue stats now report private storage payments under `byEndpoint.private_object` and `byEndpoint.private_object_renewal` instead of folding them into the `pin` bucket.
+- Landing page rewritten around the two-track product (pin to IPFS / keep private). Drops the italic-emphasis voice pattern, swaps the display face to Space Grotesk + Inter, refreshes hero + § 01 / 02 / 03 / 04 / 07 to cover both tracks, adds a new Inference Room context section, and adds a nine-question FAQ with `Product` and `FAQPage` JSON-LD for AEO.
+
+### Fixed
+- Private-object `/renew` parsing now shares the same parser as `/private/objects` (DRY), the path decoder guards against malformed `%`-escapes, and the request-time clock is read once per call so retention math is consistent.
+- Landing page tab handler scoped per `.code-block` so clicking a tab on the `/pins` example no longer hides the `/private/objects` example, and the private-object code sample uses the actual response shape (`{ id }` in JSON + `x-wallet-auth-token` header) plus the required `X-Content-Size-Bytes` header.
 
 ### Docs
-- Landing page API coverage now includes the private object create, list, read, update, delete, content, and renewal endpoints.
+- mppscan agent description updated.
 
 ## [v0.2.6] - 2026-04-29
 
