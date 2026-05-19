@@ -221,33 +221,13 @@ jobs:
           cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
           location: ${{ vars.GKE_CLUSTER_LOCATION }}
 
-      - name: Wait for container images to be published
-        env:
-          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-        run: |
-          set -euo pipefail
-          release_version="${RELEASE_TAG#v}"
-
-          for image in api kubo; do
-            uri="us-central1-docker.pkg.dev/mainnet-trailblazer/tack/${image}:${release_version}"
-            echo "Waiting for $uri to be available in Artifact Registry..."
-            for attempt in {1..40}; do
-              if gcloud artifacts docker images describe "$uri" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
-                echo "Found $uri"
-                break
-              fi
-
-              if [ "$attempt" = "40" ]; then
-                echo "::error::Timed out waiting for $uri (docker.yml may have failed; check the docker workflow run)"
-                exit 1
-              fi
-
-              echo "  attempt $attempt/40: not yet present, sleeping 30s"
-              sleep 30
-            done
-          done
-
+      # Note: a pre-flight `gcloud artifacts docker images describe` poll used to
+      # live here (PR #51). It consistently reported "not yet present" for tags
+      # that were verifiably pushed minutes earlier (see v0.2.7 runs 26100712107
+      # and 26102049063). Until we root-cause whether it's an IAM scope on the
+      # deploy SA, a project-resolution mismatch, or a quirk of `describe`
+      # against fresh tags, helm upgrade itself is the source of truth: if the
+      # image really isn't in GAR, the rollout will fail loudly on ImagePullBackOff.
       - name: Deploy Helm release
         env:
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
