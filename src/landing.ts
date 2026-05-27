@@ -14,7 +14,11 @@ export function landingPageHtml(): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tack — wallet-owned storage for AI Agents. Pin to IPFS or keep private.</title>
-  <meta name="description" content="Wallet-owned storage for AI Agents: pin to IPFS or keep state private. Pay-per-use in USDC over x402 and MPP. Live on Taiko, Base, and Tempo." />
+  <meta name="description" content="Tack is wallet-owned storage for AI Agents. Pin files to IPFS or keep private object state for the paying wallet only. Pay-per-use in USDC over x402 and MPP. Live on Taiko, Base, and Tempo." />
+  <meta name="keywords" content="AI Agent storage, IPFS pinning, IPFS alternative, Pinata alternative, x402, EIP-3009, Machine Payment Protocol, MPP, wallet-owned storage, A2A agent card, USDC pinning, AI Agent memory" />
+  <meta name="author" content="Inference Room" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+  <link rel="canonical" href="${o}" />
   <meta name="theme-color" content="#0a0a0a" />
   <link rel="icon" href="/favicon.svg?v=tack-redesign-20260519" type="image/svg+xml" />
 
@@ -265,6 +269,18 @@ export function landingPageHtml(): string {
       font-size: clamp(64px, 9.5vw, 148px);
       max-width: 22ch;
     }
+    .section-intro {
+      font-family: var(--f-mono);
+      font-weight: 400;
+      font-size: 15px;
+      color: var(--fg-dim);
+      line-height: 1.6;
+      max-width: 68ch;
+      margin-top: 18px;
+    }
+    .section-intro strong { color: var(--fg); font-weight: 500; }
+    .accent-section .section-intro { color: rgba(255,255,255,0.92); }
+    .accent-section .section-intro strong { color: #fff; }
 
     /* ── Buttons ── */
     .btn-fill {
@@ -1262,7 +1278,7 @@ export function landingPageHtml(): string {
       <div class="hero-split">
         <div>
           <p class="hero-lede">
-            A place for an Agent's <strong>own things</strong>. Tack pins what your Agent wants the world to find, and stores what only the paying wallet should read. Two tracks, same wallet, same x402 and MPP rails. No signup, no API keys.
+            <strong>Tack is wallet-owned storage for AI Agents.</strong> Pin files to IPFS for the world to find, or keep state private &mdash; only the paying wallet can read it back. Pay per use in USDC over x402 or MPP. No accounts, no API keys. Live on Taiko, Base, and Tempo.
           </p>
 
           <div class="hero-endpoints">
@@ -1345,6 +1361,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 01 · Problem</div>
         <h2 class="section-title">Pin services were built for humans. <em>Agents</em> need different defaults.</h2>
+        <p class="section-intro"><strong>How Tack compares to legacy IPFS pinning services like Pinata, NFT.Storage, and Storacha for AI Agent use cases.</strong> Identity is a wallet address, payment is on-chain USDC per pin, the minimum is a thousandth of a cent, and the surface is machine-native (HTTP 402 plus an A2A agent card).</p>
       </div>
 
       <div class="compare">
@@ -1374,6 +1391,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 02 · What to keep</div>
         <h2 class="section-title">Two kinds of things an <em>Agent</em> produces.</h2>
+        <p class="section-intro"><strong>Where AI Agents store memory, state, artifacts, and shared knowledge.</strong> Tack pins anything addressable by CID to IPFS, and stores anything wallet-scoped &mdash; long-term memory, task receipts, drafts &mdash; on its private object track, off-IPFS.</p>
       </div>
 
       <div class="tracks">
@@ -1424,6 +1442,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 03 · The loop</div>
         <h2 class="section-title"><em>Same shape</em>, both tracks.</h2>
+        <p class="section-intro"><strong>The x402 and MPP payment flow for AI Agent storage.</strong> Three round-trips for a pin, four for a private object: POST, receive a 402 with price, sign once, retry. The wallet owns the result and can list, replace, or delete any time.</p>
       </div>
 
       <div class="flow-grid">
@@ -1453,6 +1472,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 04 · Integrate / Dockets</div>
         <h2 class="section-title">Two endpoints. <em>One</em> integration.</h2>
+        <p class="section-intro"><strong>Point any HTTP client &mdash; Claude Code, Codex, OpenClaw, Hermes, or your own.</strong> Same wallet, same x402 or MPP credential: <code>/pins</code> publishes to IPFS, <code>/private/objects</code> keeps bytes scoped to the paying wallet.</p>
       </div>
 
       <div class="integrate">
@@ -1578,6 +1598,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 05 · Rails</div>
         <h2 class="section-title">Two protocols, <em>three chains</em>, one set of endpoints.</h2>
+        <p class="section-intro"><strong>HTTP 402 plus EIP-3009 transferWithAuthorization on Taiko and Base, plus Machine Payment Protocol with TIP-20 on Tempo.</strong> The Agent&rsquo;s wallet picks whichever rail it already holds USDC on. No gas, no bridging.</p>
       </div>
 
       <div class="rails">
@@ -1636,6 +1657,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 06 · Pricing</div>
         <h2 class="section-title">Pay for <em>size</em> and duration.</h2>
+        <p class="section-intro"><strong>Per-pin USDC pricing for AI Agent storage.</strong> $0.10 per GB-month on either track. Pick any term between 1 and 24 months, paid once in USDC over x402 or USDC.e over MPP. No subscriptions, no monthly minimums, roughly 12&times; cheaper than Pinata&rsquo;s x402 demo on short pins.</p>
       </div>
 
       <div class="fare">
@@ -1716,6 +1738,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 07 · Api</div>
         <h2 class="section-title">The <em>full surface</em>.</h2>
+        <p class="section-intro"><strong>Full IPFS Pinning Service API spec on the pin track, plus a parallel wallet-owned private object track.</strong> SIWE issues bearer tokens for owner routes. An A2A agent card at <code>/.well-known/agent.json</code> lets any HTTP client discover, verify, and pay.</p>
       </div>
 
       <div class="api-group-head">
@@ -1835,6 +1858,7 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 09 · Faq</div>
         <h2 class="section-title"><em>Questions</em> builders actually ask.</h2>
+        <p class="section-intro"><strong>Common questions about Tack &mdash; wallet-owned IPFS pinning and private storage for AI Agents.</strong> Direct answers to how memory, state, and artifacts are stored, how x402 and MPP payments work, what chains are supported, and how Tack compares to Pinata.</p>
       </div>
 
       <div class="faq">
