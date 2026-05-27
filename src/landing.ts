@@ -321,23 +321,20 @@ export function landingPageHtml(): string {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%      { opacity: 0.55; transform: scale(0.85); }
     }
-    .hero-wordmark {
+    .hero-headline {
       font-family: var(--f-display);
       font-weight: 900;
       text-transform: uppercase;
       color: var(--fg);
-      font-size: clamp(160px, 38vw, 540px);
-      line-height: 0.82;
-      letter-spacing: -0.04em;
-      white-space: nowrap;
-      overflow: visible;
-      margin: 0 -40px;
-      padding-left: 0;
+      font-size: clamp(72px, 13vw, 200px);
+      line-height: 0.84;
+      letter-spacing: -0.035em;
+      margin: 0 0 0 0;
+      padding-bottom: 8px;
+      max-width: 14ch;
     }
-    .hero-wordmark .ampersand {
-      color: var(--accent);
-      font-style: italic;
-    }
+    .hero-headline em { font-style: italic; color: var(--accent); font-weight: 900; }
+    .hero-headline .dot { color: var(--accent); }
     .hero-split {
       display: grid;
       grid-template-columns: 1fr;
@@ -1260,7 +1257,7 @@ export function landingPageHtml(): string {
         <span>·</span>
         <span class="live"><span class="live-dot" aria-hidden="true"></span>LIVE — Taiko · Base · Tempo</span>
       </div>
-      <div class="hero-wordmark" aria-hidden="true">TACK<span class="ampersand">.</span></div>
+      <h1 class="hero-headline">A place for an Agent's <em>own</em> things<span class="dot">.</span></h1>
 
       <div class="hero-split">
         <div>
@@ -1893,7 +1890,7 @@ export function landingPageHtml(): string {
       <div class="eyebrow">§ 10 · Point your agent</div>
       <div class="closer-word">Keep<em>.</em></div>
       <div class="closer-foot">
-        <p class="closer-body">A place for your Agent to keep things. The public ones and the private ones. Two endpoints away, one wallet, no API keys.</p>
+        <p class="closer-body">A place for your Agent to keep things. The public ones and the private ones. Two endpoints away.</p>
         <div class="closer-cta">
           <button class="btn-fill" data-copy="${o}" aria-label="Copy base URL">Copy ${o}</button>
           <a class="btn-ghost" href="${o}/.well-known/agent.json" target="_blank" rel="noopener">Agent card →</a>
