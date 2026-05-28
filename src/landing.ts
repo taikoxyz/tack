@@ -147,10 +147,10 @@ export function landingPageHtml(): string {
       --bg:      #0a0a0a;
       --bg2:     #111111;
       --fg:      #f0ede4;
-      --fg-dim:  rgba(240,237,228,0.52);
-      --fg-mute: rgba(240,237,228,0.26);
-      --line:    rgba(240,237,228,0.08);
-      --line-2:  rgba(240,237,228,0.14);
+      --fg-dim:  rgba(240,237,228,0.72);
+      --fg-mute: rgba(240,237,228,0.50);
+      --line:    rgba(240,237,228,0.10);
+      --line-2:  rgba(240,237,228,0.16);
       --f-display: 'Barlow Condensed', ui-sans-serif, system-ui, sans-serif;
       --f-mono:    'IBM Plex Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
     }
