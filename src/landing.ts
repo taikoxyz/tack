@@ -645,7 +645,11 @@ export function landingPageHtml(): string {
     }
     .integrate-aside {
       border: 1px solid var(--line);
-      padding: 32px;
+      padding: 0;
+      background: var(--bg2);
+    }
+    @media (min-width: 1100px) {
+      .integrate-aside { position: sticky; top: 72px; }
     }
     .integrate-aside .label {
       font-family: var(--f-mono);
@@ -653,29 +657,40 @@ export function landingPageHtml(): string {
       letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--fg-mute);
-      margin-bottom: 16px;
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--line);
+      display: block;
     }
     .integrate-aside .url {
       font-family: var(--f-mono);
-      font-size: 15px;
+      font-size: 17px;
       color: var(--fg);
       letter-spacing: -0.01em;
       word-break: break-all;
-      margin-bottom: 18px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+      margin: 0;
     }
     .integrate-aside .url .host { color: var(--accent); }
+    .integrate-aside > .note,
+    .integrate-aside > .check,
+    .integrate-aside > .chips { padding-left: 24px; padding-right: 24px; }
+    .integrate-aside > .note { padding-top: 18px; padding-bottom: 18px; }
+    .integrate-aside > .check { padding-top: 18px; padding-bottom: 18px; }
+    .integrate-aside > .chips { padding-bottom: 24px; }
     .integrate-aside .note {
       font-family: var(--f-mono);
       font-size: 13px;
       color: var(--fg-dim);
-      line-height: 1.5;
-      margin-bottom: 18px;
+      line-height: 1.55;
+      margin: 0;
     }
     .integrate-aside .check {
       list-style: none;
       display: flex; flex-direction: column; gap: 10px;
-      padding-top: 18px;
       border-top: 1px solid var(--line);
+      margin: 0;
     }
     .integrate-aside .check li {
       display: flex; gap: 12px; align-items: flex-start;
@@ -690,10 +705,10 @@ export function landingPageHtml(): string {
       flex-shrink: 0;
     }
     .integrate-aside .chips {
-      display: flex; gap: 8px; flex-wrap: wrap;
-      margin-top: 22px;
-      padding-top: 18px;
+      display: flex; gap: 6px; flex-wrap: wrap;
       border-top: 1px solid var(--line);
+      padding-top: 18px;
+      margin: 0;
     }
     .integrate-aside .chip {
       font-family: var(--f-mono);
@@ -706,64 +721,115 @@ export function landingPageHtml(): string {
     }
     .integrate-aside .chip strong { color: var(--accent); font-weight: 700; }
 
-    .code-stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .code-stack { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
     .code-block {
       border: 1px solid var(--line);
       background: var(--bg2);
+      position: relative;
     }
     .code-track-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: 56px 1fr auto;
+      align-items: stretch;
       border-bottom: 1px solid var(--line);
     }
+    .code-track-head .idx {
+      background: var(--accent);
+      color: #fff;
+      font-family: var(--f-display);
+      font-weight: 900;
+      font-size: 32px;
+      line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      letter-spacing: -0.02em;
+    }
+    .code-track-head .label-wrap {
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 12px 18px;
+      gap: 4px;
+    }
     .code-track-head .label {
-      font-family: var(--f-mono);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.18em;
+      font-family: var(--f-display);
+      font-weight: 900;
+      font-size: 22px;
+      letter-spacing: -0.015em;
       text-transform: uppercase;
-      color: var(--accent);
+      color: var(--fg);
+      line-height: 1;
     }
     .code-track-head .path {
       font-family: var(--f-mono);
-      font-size: 12px;
-      color: var(--fg-dim);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .code-track-head .verb {
+      font-family: var(--f-mono);
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--fg-mute);
+      padding: 0 18px;
+      display: flex; align-items: center;
+      border-left: 1px solid var(--line);
     }
     .code-tabs {
       display: flex; gap: 0;
       border-bottom: 1px solid var(--line);
       overflow-x: auto;
+      background: var(--bg);
     }
     .code-tabs::-webkit-scrollbar { display: none; }
     .code-tab {
       background: transparent;
       border: 0;
-      padding: 12px 16px;
+      padding: 14px 18px;
       font-family: var(--f-mono);
       font-size: 11px;
       font-weight: 500;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: var(--fg-mute);
       cursor: pointer;
       border-right: 1px solid var(--line);
-      transition: color 0.12s, background 0.12s;
+      border-top: 2px solid transparent;
+      transition: color 0.12s, background 0.12s, border-color 0.12s;
+      position: relative;
     }
     .code-tab:hover { color: var(--fg); }
     .code-tab[aria-selected="true"] {
-      color: var(--fg);
-      background: var(--bg);
+      color: var(--accent);
+      background: var(--bg2);
+      border-top-color: var(--accent);
     }
     .code-pane { display: none; }
     .code-pane[data-active="true"] { display: block; }
     .code-block pre {
-      padding: 22px 24px;
+      padding: 24px 28px;
       overflow-x: auto;
       font-family: var(--f-mono);
       font-size: 12.5px;
-      line-height: 1.7;
+      line-height: 1.75;
       color: var(--fg);
     }
+    .code-track-foot {
+      display: flex; gap: 0;
+      border-top: 1px solid var(--line);
+      background: var(--bg);
+    }
+    .code-track-foot .meta {
+      padding: 10px 14px;
+      font-family: var(--f-mono);
+      font-size: 10.5px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--fg-mute);
+      border-right: 1px solid var(--line);
+    }
+    .code-track-foot .meta b { color: var(--fg-dim); font-weight: 500; }
+    .code-track-foot .meta:last-child { border-right: 0; }
+    .code-track-foot .meta.accent { color: var(--accent); }
     .code-block pre .k { color: var(--accent); }
     .code-block pre .s { color: var(--fg); }
     .code-block pre .c { color: var(--fg-mute); }
@@ -1506,8 +1572,12 @@ export function landingPageHtml(): string {
         <div class="code-stack">
           <div class="code-block">
             <div class="code-track-head">
-              <span class="label">Pin a CID</span>
-              <span class="path">POST /pins</span>
+              <span class="idx">01</span>
+              <div class="label-wrap">
+                <span class="label">Pin a CID</span>
+                <span class="path">/pins · public · paid</span>
+              </div>
+              <span class="verb">POST</span>
             </div>
             <div class="code-tabs" role="tablist" aria-label="Choose client">
               <button class="code-tab" role="tab" aria-selected="true" aria-controls="code-x402" id="tab-x402" data-tab="x402">x402 · Taiko/Base</button>
@@ -1571,12 +1641,21 @@ export function landingPageHtml(): string {
 
 # Pick any chain your wallet holds. Sign, retry. Tack pins, returns 202.</span></code></pre>
             </div>
+            <div class="code-track-foot" aria-hidden="true">
+              <span class="meta accent">402 → sign → 202</span>
+              <span class="meta"><b>lang</b> typescript</span>
+              <span class="meta"><b>auth</b> wallet signature</span>
+            </div>
           </div>
 
           <div class="code-block">
             <div class="code-track-head">
-              <span class="label">Store a private object</span>
-              <span class="path">POST /private/objects</span>
+              <span class="idx">02</span>
+              <div class="label-wrap">
+                <span class="label">Store a private object</span>
+                <span class="path">/private/objects · private · paid</span>
+              </div>
+              <span class="verb">POST</span>
             </div>
             <div class="code-pane" data-active="true">
               <pre><code><span class="c">// Same wallet, same x402 (or MPP) credential as /pins.</span>
@@ -1599,6 +1678,11 @@ export function landingPageHtml(): string {
 <span class="k">const</span> read = <span class="k">await</span> <span class="f">fetch</span>(<span class="s">\`\${o}/private/objects/\${objectId}/content\`</span>, {
   headers: { <span class="s">"Authorization"</span>: <span class="s">\`Bearer \${bearer}\`</span> },
 });</code></pre>
+            </div>
+            <div class="code-track-foot" aria-hidden="true">
+              <span class="meta accent">402 → sign → 202 + bearer</span>
+              <span class="meta"><b>lang</b> typescript</span>
+              <span class="meta"><b>retention</b> 1 – 24 months</span>
             </div>
           </div>
         </div>
