@@ -14,9 +14,7 @@ export function landingPageHtml(): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tack — wallet-owned storage for AI Agents. Pin to IPFS or keep private.</title>
-  <meta name="description" content="Tack is wallet-owned storage for AI Agents. Pin files to IPFS or keep private object state for the paying wallet only. Pay-per-use in USDC over x402 and MPP. Live on Taiko, Base, and Tempo." />
-  <meta name="keywords" content="AI Agent storage, IPFS pinning, IPFS alternative, Pinata alternative, x402, EIP-3009, Machine Payment Protocol, MPP, wallet-owned storage, A2A agent card, USDC pinning, AI Agent memory" />
-  <meta name="author" content="Inference Room" />
+  <meta name="description" content="Wallet-owned storage for AI Agents: pin to IPFS or keep state private. Pay-per-use in USDC over x402 and MPP. Live on Taiko, Base, and Tempo." />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
   <link rel="canonical" href="${o}" />
   <meta name="theme-color" content="#0a0a0a" />
@@ -222,14 +220,10 @@ export function landingPageHtml(): string {
     }
     @media (max-width: 720px) { .nav-inner { padding: 0 20px; } }
     .logo {
-      display: inline-flex; align-items: baseline; gap: 4px;
-      font-family: var(--f-display);
-      font-weight: 900;
-      font-size: 28px;
-      text-transform: uppercase;
-      letter-spacing: -0.02em;
+      display: inline-flex; align-items: baseline; gap: 2px;
+      font-family: var(--f-mono);
+      font-weight: 500; font-size: 15px;
       color: var(--fg);
-      line-height: 1;
     }
     .logo .slash { color: var(--accent); }
     .nav-links {
@@ -900,6 +894,15 @@ export function landingPageHtml(): string {
     }
     .fare-list li .k { color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; }
     .fare-list li .v { font-weight: 500; }
+    .fare-footnote {
+      font-family: var(--f-mono);
+      font-size: 12px;
+      color: var(--fg-mute);
+      line-height: 1.55;
+      margin: 24px 0 0;
+      max-width: 88ch;
+    }
+    .fare-footnote a { color: var(--accent); border-bottom: 1px solid var(--accent); }
 
     /* Pricing tool */
     .price-tool {
@@ -1191,6 +1194,18 @@ export function landingPageHtml(): string {
       margin: 28px 0 40px;
     }
     .closer-word em { font-style: italic; color: var(--accent); font-weight: 900; }
+    .closer-headline {
+      font-family: var(--f-display);
+      font-weight: 900;
+      text-transform: uppercase;
+      font-size: clamp(64px, 8vw, 124px);
+      line-height: 0.88;
+      letter-spacing: -0.03em;
+      color: var(--fg);
+      margin: 0 0 40px;
+      max-width: 22ch;
+    }
+    .closer-headline .dot { color: var(--accent); }
     .closer-foot {
       display: flex; flex-direction: column; gap: 32px;
       border-top: 1px solid var(--line);
@@ -1252,11 +1267,11 @@ export function landingPageHtml(): string {
         <span class="slash">/</span><span>tack</span>
       </a>
       <div class="nav-links">
-        <a href="#keep">§02 Keep</a>
-        <a href="#pricing">§06 Pricing</a>
-        <a href="#api">§07 Api</a>
-        <a href="#faq">§09 Faq</a>
-        <a href="#integrate" class="nav-cta">Point your agent →</a>
+        <a href="#keep">keep</a>
+        <a href="#pricing">pricing</a>
+        <a href="#api">api</a>
+        <a href="#faq">faq</a>
+        <a href="#integrate" class="nav-cta">point your agent →</a>
       </div>
     </div>
   </nav>
@@ -1265,20 +1280,20 @@ export function landingPageHtml(): string {
 
     <section class="hero">
       <div class="hero-meta meta">
-        <span>§ 00</span>
+        <span class="live"><span class="live-dot" aria-hidden="true"></span>LIVE</span>
         <span>·</span>
-        <b>Resident</b>
+        <span>Taiko</span>
         <span>·</span>
-        <span>Storage</span>
+        <span>Base</span>
         <span>·</span>
-        <span class="live"><span class="live-dot" aria-hidden="true"></span>LIVE — Taiko · Base · Tempo</span>
+        <span>Tempo</span>
       </div>
       <h1 class="hero-headline">A place for an Agent's <em>own</em> things<span class="dot">.</span></h1>
 
       <div class="hero-split">
         <div>
           <p class="hero-lede">
-            <strong>Tack is wallet-owned storage for AI Agents.</strong> Pin files to IPFS for the world to find, or keep state private &mdash; only the paying wallet can read it back. Pay per use in USDC over x402 or MPP. No accounts, no API keys. Live on Taiko, Base, and Tempo.
+            Tack pins what your Agent wants the world to find, and stores what only the paying wallet should read. Two tracks, same wallet, same x402 and MPP rails, no signup and no API keys.
           </p>
 
           <div class="hero-endpoints">
@@ -1316,7 +1331,7 @@ export function landingPageHtml(): string {
           <div class="hero-stat">
             <div class="hero-stat-label">Pin</div>
             <div class="hero-stat-value">$0.001</div>
-            <div class="hero-stat-unit">/ pin · min</div>
+            <div class="hero-stat-unit">/ pin</div>
           </div>
           <div class="hero-stat">
             <div class="hero-stat-label">Private</div>
@@ -1326,7 +1341,7 @@ export function landingPageHtml(): string {
           <div class="hero-stat">
             <div class="hero-stat-label">Settlement</div>
             <div class="hero-stat-value">~30s</div>
-            <div class="hero-stat-unit">on-chain</div>
+            <div class="hero-stat-unit">&nbsp;</div>
           </div>
         </div>
       </div>
@@ -1361,7 +1376,6 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 01 · Problem</div>
         <h2 class="section-title">Pin services were built for humans. <em>Agents</em> need different defaults.</h2>
-        <p class="section-intro"><strong>How Tack compares to legacy IPFS pinning services like Pinata, NFT.Storage, and Storacha for AI Agent use cases.</strong> Identity is a wallet address, payment is on-chain USDC per pin, the minimum is a thousandth of a cent, and the surface is machine-native (HTTP 402 plus an A2A agent card).</p>
       </div>
 
       <div class="compare">
@@ -1390,8 +1404,7 @@ export function landingPageHtml(): string {
     <section id="keep">
       <div class="section-head">
         <div class="eyebrow">§ 02 · What to keep</div>
-        <h2 class="section-title">Two kinds of things an <em>Agent</em> produces.</h2>
-        <p class="section-intro"><strong>Where AI Agents store memory, state, artifacts, and shared knowledge.</strong> Tack pins anything addressable by CID to IPFS, and stores anything wallet-scoped &mdash; long-term memory, task receipts, drafts &mdash; on its private object track, off-IPFS.</p>
+        <h2 class="section-title">The two kinds of things an <em>Agent</em> produces.</h2>
       </div>
 
       <div class="tracks">
@@ -1441,8 +1454,7 @@ export function landingPageHtml(): string {
     <section id="flow">
       <div class="section-head">
         <div class="eyebrow">§ 03 · The loop</div>
-        <h2 class="section-title"><em>Same shape</em>, both tracks.</h2>
-        <p class="section-intro"><strong>The x402 and MPP payment flow for AI Agent storage.</strong> Three round-trips for a pin, four for a private object: POST, receive a 402 with price, sign once, retry. The wallet owns the result and can list, replace, or delete any time.</p>
+        <h2 class="section-title">The flow is the <em>same shape</em> for both tracks.</h2>
       </div>
 
       <div class="flow-grid">
@@ -1461,7 +1473,7 @@ export function landingPageHtml(): string {
           <ol class="flow-steps">
             <li><span class="ord">Step 01</span><span class="step">The Agent POSTs the bytes to <code>/private/objects</code> with the retention it wants. Tack responds <code>402</code> with the size-and-duration quote.</span></li>
             <li><span class="ord">Step 02</span><span class="step">The wallet signs the same x402 or MPP authorization it would for a public pin. Tack settles and stores the object on its private volume.</span></li>
-            <li><span class="ord">Step 03</span><span class="step">Tack returns the object id and a bearer token. The wallet reads its bytes back at <code>/private/objects/:id/content</code>.</span></li>
+            <li><span class="ord">Step 03</span><span class="step">Tack returns the object id and a bearer token. The wallet reads its bytes back at <code>/private/objects/:objectId/content</code>.</span></li>
             <li><span class="ord">Step 04</span><span class="step">When the token expires the Agent signs back in with SIWE at <code>/auth/challenge</code> and <code>/auth/token</code> for a fresh token. No CID is ever emitted.</span></li>
           </ol>
         </div>
@@ -1470,14 +1482,13 @@ export function landingPageHtml(): string {
 
     <section id="integrate">
       <div class="section-head">
-        <div class="eyebrow">§ 04 · Integrate / Dockets</div>
-        <h2 class="section-title">Two endpoints. <em>One</em> integration.</h2>
-        <p class="section-intro"><strong>Point any HTTP client &mdash; Claude Code, Codex, OpenClaw, Hermes, or your own.</strong> Same wallet, same x402 or MPP credential: <code>/pins</code> publishes to IPFS, <code>/private/objects</code> keeps bytes scoped to the paying wallet.</p>
+        <div class="eyebrow">§ 04 · Integrate</div>
+        <h2 class="section-title">Two endpoints, <em>one</em> integration.</h2>
       </div>
 
       <div class="integrate">
         <aside class="integrate-aside">
-          <div class="label">→ Base URL</div>
+          <div class="label">→ API endpoint</div>
           <div class="url"><span class="host">${o}</span></div>
           <p class="note">Your Agent needs <strong>USDC on Taiko or Base</strong>, or <strong>USDC.e on Tempo</strong>. No ETH, no API keys.</p>
           <ul class="check">
@@ -1598,7 +1609,6 @@ export function landingPageHtml(): string {
       <div class="section-head">
         <div class="eyebrow">§ 05 · Rails</div>
         <h2 class="section-title">Two protocols, <em>three chains</em>, one set of endpoints.</h2>
-        <p class="section-intro"><strong>HTTP 402 plus EIP-3009 transferWithAuthorization on Taiko and Base, plus Machine Payment Protocol with TIP-20 on Tempo.</strong> The Agent&rsquo;s wallet picks whichever rail it already holds USDC on. No gas, no bridging.</p>
       </div>
 
       <div class="rails">
@@ -1656,8 +1666,7 @@ export function landingPageHtml(): string {
     <section id="pricing">
       <div class="section-head">
         <div class="eyebrow">§ 06 · Pricing</div>
-        <h2 class="section-title">Pay for <em>size</em> and duration.</h2>
-        <p class="section-intro"><strong>Per-pin USDC pricing for AI Agent storage.</strong> $0.10 per GB-month on either track. Pick any term between 1 and 24 months, paid once in USDC over x402 or USDC.e over MPP. No subscriptions, no monthly minimums, roughly 12&times; cheaper than Pinata&rsquo;s x402 demo on short pins.</p>
+        <h2 class="section-title">Pay for <em>size</em> and duration, on either track.</h2>
       </div>
 
       <div class="fare">
@@ -1696,6 +1705,8 @@ export function landingPageHtml(): string {
         </div>
       </div>
 
+      <p class="fare-footnote">Same $0.10 / GB&middot;month rate. Pinata&rsquo;s <a href="https://pinata.cloud/blog/pay-to-pin-on-ipfs-with-x402" target="_blank" rel="noopener">demo</a> locks every pin to 12 months; Tack lets you pick 1&ndash;24. At 3&nbsp;mo it&rsquo;s 4&times; cheaper, 6&nbsp;mo 2&times;, 12&nbsp;mo the same.</p>
+
       <div class="price-tool">
         <div class="price-tool-left">
           <div class="price-eyebrow">→ Live quote · drag the sliders</div>
@@ -1728,7 +1739,7 @@ export function landingPageHtml(): string {
             <li>Retrieval is free. Paywalls are opt-in, per CID.</li>
             <li>Pins and private objects auto-expire. No recurring charges.</li>
             <li>Owner ops — list, replace, delete — don't re-charge.</li>
-            <li><code>price = clamp(sizeGB × $0.10 × months, $0.001, $50)</code>. Settlement rounds up to the next asset unit.</li>
+            <li><code>price = clamp(sizeGB × $0.10 × months, $0.001, $50)</code>. Size is binary (1&nbsp;GB = 1,073,741,824 bytes). Duration is 1&ndash;24 months, set with <code>X-Pin-Duration-Months</code> for pins or <code>X-Storage-Duration-Months</code> for private objects. Settlement rounds up to the next asset unit.</li>
           </ul>
         </div>
       </div>
@@ -1736,9 +1747,8 @@ export function landingPageHtml(): string {
 
     <section id="api">
       <div class="section-head">
-        <div class="eyebrow">§ 07 · Api</div>
-        <h2 class="section-title">The <em>full surface</em>.</h2>
-        <p class="section-intro"><strong>Full IPFS Pinning Service API spec on the pin track, plus a parallel wallet-owned private object track.</strong> SIWE issues bearer tokens for owner routes. An A2A agent card at <code>/.well-known/agent.json</code> lets any HTTP client discover, verify, and pay.</p>
+        <div class="eyebrow">§ 07 · API</div>
+        <h2 class="section-title">The <em>full surface</em>, pin endpoints and private object endpoints.</h2>
       </div>
 
       <div class="api-group-head">
@@ -1786,6 +1796,11 @@ export function landingPageHtml(): string {
           <div><div class="api-path">/.well-known/agent.json</div><div class="api-desc">A2A agent card. Machines discover, verify, pay.</div></div>
           <span class="api-tag">public</span>
         </div>
+        <div class="api-row">
+          <span class="api-method get">GET</span>
+          <div><div class="api-path">/openapi.json</div><div class="api-desc">OpenAPI 3.1 spec covering public, paid, and owner routes.</div></div>
+          <span class="api-tag">public</span>
+        </div>
       </div>
 
       <div class="api-group-head second">
@@ -1805,17 +1820,17 @@ export function landingPageHtml(): string {
         </div>
         <div class="api-row">
           <span class="api-method get">GET</span>
-          <div><div class="api-path">/private/objects/:id/content</div><div class="api-desc">Read the bytes, with range and ETag support.</div></div>
+          <div><div class="api-path">/private/objects/:objectId/content</div><div class="api-desc">Read the bytes, with range and ETag support.</div></div>
           <span class="api-tag">bearer</span>
         </div>
         <div class="api-row">
           <span class="api-method">POST</span>
-          <div><div class="api-path">/private/objects/:id/renew</div><div class="api-desc">Extend retention.</div></div>
+          <div><div class="api-path">/private/objects/:objectId/renew</div><div class="api-desc">Extend retention for a private object you own.</div></div>
           <span class="api-tag pay">bearer · x402 · MPP</span>
         </div>
         <div class="api-row">
           <span class="api-method delete">DELETE</span>
-          <div><div class="api-path">/private/objects/:id</div><div class="api-desc">Delete early, refund unused retention.</div></div>
+          <div><div class="api-path">/private/objects/:objectId</div><div class="api-desc">Delete early, refund unused retention.</div></div>
           <span class="api-tag">bearer</span>
         </div>
         <div class="api-row">
@@ -1829,26 +1844,13 @@ export function landingPageHtml(): string {
     <section id="inference-room" class="accent-section">
       <div class="section-head">
         <div class="eyebrow">§ 08 · Where this lives</div>
-        <h2 class="section-title">First resident of <em>Inference Room</em>.</h2>
+        <h2 class="section-title">Tack is the first product in <em>Inference Room</em>.</h2>
       </div>
 
       <div class="ir-body">
         <p>Inference Room is an independent launchpad for AI Agents and the infrastructure they need to ship. Tack is the first resident, focused on storage. Bantō, the finance multisig Agent on Safe, is the second.</p>
-        <p>Every resident has its own product, its own brand, and its own roadmap. What they share is a thesis: AI Agents need primitives that were designed for Agents, not retrofitted from products built for humans. Pin-for-humans does not work for Agents, multisig-for-humans does not work for finance Agents, and the same mismatch shows up in every layer underneath.</p>
+        <p>Every resident has its own product, its own brand, and its own roadmap. What they share is a thesis: AI Agents need primitives that were designed for Agents, not retrofitted from products built for humans. Pin-for-humans does not work for Agents, multisig-for-humans does not work for finance Agents, and the same shape of mismatch shows up in every layer underneath.</p>
         <p>Inference Room is where those primitives get built and shipped.</p>
-      </div>
-
-      <div class="ir-cards">
-        <div class="ir-card">
-          <div class="res">Tack</div>
-          <div class="role">Resident · 01 · Storage</div>
-          <div class="desc">Wallet-owned storage for AI Agents. Pin to IPFS or keep private. Live on Taiko, Base, Tempo.</div>
-        </div>
-        <div class="ir-card">
-          <div class="res">Bantō</div>
-          <div class="role">Resident · 02 · Finance</div>
-          <div class="desc">Multisig Agent on Safe. The treasury primitive built for Agents that hold and move funds.</div>
-        </div>
       </div>
 
       <a class="ir-link" href="https://inferenceroom.ai" target="_blank" rel="noopener">Read more at inferenceroom.ai →</a>
@@ -1856,9 +1858,8 @@ export function landingPageHtml(): string {
 
     <section id="faq">
       <div class="section-head">
-        <div class="eyebrow">§ 09 · Faq</div>
+        <div class="eyebrow">§ 09 · FAQ</div>
         <h2 class="section-title"><em>Questions</em> builders actually ask.</h2>
-        <p class="section-intro"><strong>Common questions about Tack &mdash; wallet-owned IPFS pinning and private storage for AI Agents.</strong> Direct answers to how memory, state, and artifacts are stored, how x402 and MPP payments work, what chains are supported, and how Tack compares to Pinata.</p>
       </div>
 
       <div class="faq">
@@ -1911,10 +1912,9 @@ export function landingPageHtml(): string {
     </section>
 
     <section class="closer">
-      <div class="eyebrow">§ 10 · Point your agent</div>
-      <div class="closer-word">Keep<em>.</em></div>
+      <h2 class="closer-headline">A place for your Agent to keep things. The public ones and the private ones<span class="dot">.</span></h2>
       <div class="closer-foot">
-        <p class="closer-body">A place for your Agent to keep things. The public ones and the private ones. Two endpoints away.</p>
+        <p class="closer-body">Two endpoints away.</p>
         <div class="closer-cta">
           <button class="btn-fill" data-copy="${o}" aria-label="Copy base URL">Copy ${o}</button>
           <a class="btn-ghost" href="${o}/.well-known/agent.json" target="_blank" rel="noopener">Agent card →</a>
@@ -1935,12 +1935,12 @@ export function landingPageHtml(): string {
     <div class="footer-inner">
       <a class="logo" href="#top" aria-label="Tack home"><span class="slash">/</span><span>tack</span></a>
       <div class="footer-links">
-        <a href="${o}/health">Status</a>
-        <a href="${o}/.well-known/agent.json" target="_blank" rel="noopener">Agent card</a>
+        <a href="${o}/health">status</a>
+        <a href="${o}/.well-known/agent.json" target="_blank" rel="noopener">agent card</a>
         <a href="https://www.x402.org/" target="_blank" rel="noopener">x402</a>
-        <a href="https://mpp.dev/" target="_blank" rel="noopener">MPP</a>
+        <a href="https://mpp.dev/" target="_blank" rel="noopener">mpp</a>
       </div>
-      <div class="footer-tag">A place for your Agent to keep things</div>
+      <div class="footer-tag">a place for your Agent to keep things</div>
     </div>
   </footer>
 
