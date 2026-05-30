@@ -1,41 +1,21 @@
-name: release-please
-
 on:
   push:
     branches:
       - main
 
-# `permissions` here only affects the default GITHUB_TOKEN, which we do NOT
-# pass to release-please. We mint a short-lived GitHub App token below
-# (RELEASE_PLEASE_APP_ID + RELEASE_PLEASE_APP_PRIVATE_KEY) so the release PR
-# merge, tag push, and GitHub release published events all trigger their
-# downstream workflows (release.yml, docker.yml, deploy-gke.yml). Actions
-# performed with the default GITHUB_TOKEN cannot trigger another workflow run.
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  issues: write
 
 concurrency:
-  group: release-please-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   release-please:
     runs-on: [arc-runner-set]
-    timeout-minutes: 10
     steps:
-      - name: Mint GitHub App token
-        id: app_token
-        uses: actions/create-github-app-token@v2
+      - uses: googleapis/release-please-action@v4
         with:
-          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-          # Scope the token to this repo only.
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-
-      - name: Run release-please
-        uses: googleapis/release-please-action@v4
-        with:
-          config-file: .github/release-please-config.json
-          manifest-file: .github/.release-please-manifest.json
-          token: ${{ steps.app_token.outputs.token }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
