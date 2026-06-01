@@ -819,7 +819,7 @@ describe('API integration', () => {
     const landing = await app.request('http://localhost/');
     expect(landing.status).toBe(200);
     const landingHtml = await landing.text();
-    expect(landingHtml).toContain('<link rel="icon" href="/favicon.svg?v=tack-wordmark-20260428" type="image/svg+xml" />');
+    expect(landingHtml).toContain('<link rel="icon" href="/favicon.svg?v=tack-redesign-20260519" type="image/svg+xml" />');
     expect(landingHtml.match(/rel="icon"/g)).toHaveLength(1);
 
     const favicon = await app.request('http://localhost/favicon.svg');
