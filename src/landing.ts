@@ -1666,16 +1666,18 @@ export function landingPageHtml(): string {
   method: <span class="s">"POST"</span>,
   headers: {
     <span class="s">"Content-Type"</span>:               <span class="s">"application/octet-stream"</span>,
+    <span class="s">"X-Content-Size-Bytes"</span>:        <span class="f">String</span>(bytes.byteLength),
     <span class="s">"X-Storage-Duration-Months"</span>:  <span class="s">"3"</span>,
     <span class="s">"X-Object-Name"</span>:              <span class="s">"agent-memory-2026-05-19"</span>,
   },
   body: bytes,
 });
 
-<span class="k">const</span> { objectId, bearer } = <span class="k">await</span> res.<span class="f">json</span>();
+<span class="k">const</span> { id } = <span class="k">await</span> res.<span class="f">json</span>();
+<span class="k">const</span> bearer = res.<span class="f">headers</span>.<span class="f">get</span>(<span class="s">"x-wallet-auth-token"</span>);
 
 <span class="c">// Read the bytes back any time. Only the paying wallet can.</span>
-<span class="k">const</span> read = <span class="k">await</span> <span class="f">fetch</span>(<span class="s">\`\${o}/private/objects/\${objectId}/content\`</span>, {
+<span class="k">const</span> read = <span class="k">await</span> <span class="f">fetch</span>(<span class="s">\`\${o}/private/objects/\${id}/content\`</span>, {
   headers: { <span class="s">"Authorization"</span>: <span class="s">\`Bearer \${bearer}\`</span> },
 });</code></pre>
             </div>
@@ -1904,6 +1906,11 @@ export function landingPageHtml(): string {
         </div>
         <div class="api-row">
           <span class="api-method get">GET</span>
+          <div><div class="api-path">/private/objects/:objectId</div><div class="api-desc">Get metadata for a private object you own.</div></div>
+          <span class="api-tag">bearer</span>
+        </div>
+        <div class="api-row">
+          <span class="api-method get">GET</span>
           <div><div class="api-path">/private/objects/:objectId/content</div><div class="api-desc">Read the bytes, with range and ETag support.</div></div>
           <span class="api-tag">bearer</span>
         </div>
@@ -1911,6 +1918,11 @@ export function landingPageHtml(): string {
           <span class="api-method">POST</span>
           <div><div class="api-path">/private/objects/:objectId/renew</div><div class="api-desc">Extend retention for a private object you own.</div></div>
           <span class="api-tag pay">bearer · x402 · MPP</span>
+        </div>
+        <div class="api-row">
+          <span class="api-method patch">PATCH</span>
+          <div><div class="api-path">/private/objects/:objectId</div><div class="api-desc">Update a private object's name or metadata.</div></div>
+          <span class="api-tag">bearer</span>
         </div>
         <div class="api-row">
           <span class="api-method delete">DELETE</span>
