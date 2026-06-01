@@ -7,6 +7,13 @@ Format:
 - Group notes in this order: `Added`, `Changed`, `Fixed`, `Docs`, `Security`.
 - Add a tagged section before pushing a release tag. The release workflow uses the matching section for GitHub Release notes.
 
+## [0.2.8](https://github.com/taikoxyz/tack/compare/v0.2.7...v0.2.8) (2026-06-01)
+
+
+### Added
+
+* **tack:** add release-please workflow ([#60](https://github.com/taikoxyz/tack/issues/60)) ([73c4a43](https://github.com/taikoxyz/tack/commit/73c4a430a3e994e072afcab167d772d4eca34065))
+
 ## [Unreleased]
 
 ## [v0.2.7] - 2026-05-19
