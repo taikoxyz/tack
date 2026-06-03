@@ -1,5 +1,10 @@
 const PROD_URL = process.env.LANDING_URL ?? 'https://tack.inferenceroom.ai';
 
+export const googleSiteVerification = {
+  filename: 'googlee642389cdf7297cd.html',
+  content: 'google-site-verification: googlee642389cdf7297cd.html\n',
+};
+
 export const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
   <rect width="128" height="64" fill="#0a0a0a"/>
   <path d="M23 14 12 50" stroke="#ff1566" stroke-width="5" stroke-linecap="round"/>
@@ -16,6 +21,7 @@ export function landingPageHtml(): string {
   <title>Tack — wallet-owned storage for AI Agents. Pin to IPFS or keep private.</title>
   <meta name="description" content="Wallet-owned storage for AI Agents: pin to IPFS or keep state private. Pay-per-use in USDC over x402 and MPP. Live on Taiko, Base, and Tempo." />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+  <meta name="google-site-verification" content="f0O2UCeDjyTIobYVVAHT8TyhtvwJ1TJqfMsblwzQgR4" />
   <link rel="canonical" href="${o}" />
   <meta name="theme-color" content="#0a0a0a" />
   <link rel="icon" href="/favicon.svg?v=tack-redesign-20260519" type="image/svg+xml" />
