@@ -31,7 +31,7 @@ import type { WalletLoginService } from './services/wallet-login';
 import { formatPinningPriceFormula, parseNonNegativeInteger, parseSizeBytesFromPinPayload } from './services/payment/pricing';
 import { extractPrivateObjectRenewalIdFromPath } from './services/payment/http';
 import type { AgentCardConfig, PinStatusValue } from './types';
-import { faviconSvg, landingPageHtml } from './landing';
+import { faviconSvg, googleSiteVerification, landingPageHtml } from './landing';
 import {
   buildOpenApiDocument,
   PIN_INPUT_SCHEMA,
@@ -578,6 +578,13 @@ export function createApp(services: AppServices): Hono<AppEnv> {
   app.get('/favicon.svg', (c) => {
     return c.body(faviconSvg, 200, {
       'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400'
+    });
+  });
+
+  app.get(`/${googleSiteVerification.filename}`, (c) => {
+    return c.body(googleSiteVerification.content, 200, {
+      'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'public, max-age=86400'
     });
   });
