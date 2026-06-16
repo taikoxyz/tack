@@ -10,14 +10,8 @@ on:
       - pnpm-lock.yaml
       - .github/workflows/deploy-landing.yml
   push:
-    branches:
-      - main
-    paths:
-      - src/landing.ts
-      - scripts/build-landing.ts
-      - package.json
-      - pnpm-lock.yaml
-      - .github/workflows/deploy-landing.yml
+    tags:
+      - 'v*.*.*'
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -85,7 +79,7 @@ jobs:
 
   deploy-production:
     name: Production
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     runs-on: [arc-runner-set]
     timeout-minutes: 10
     environment:
