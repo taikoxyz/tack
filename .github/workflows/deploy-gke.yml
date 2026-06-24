@@ -220,6 +220,12 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
           location: ${{ vars.GKE_CLUSTER_LOCATION }}
+          # The target cluster's public control-plane endpoint is IP-restricted
+          # (master-authorized-networks). Reach it via Connect Gateway instead of
+          # the public endpoint. Requires roles/gkehub.gatewayEditor on the SA
+          # (already granted to gha-tack-gke-deployer) and the cluster registered
+          # to the fleet.
+          use_connect_gateway: "true"
 
       # Note: a pre-flight `gcloud artifacts docker images describe` poll used to
       # live here (PR #51). It consistently reported "not yet present" for tags
