@@ -223,11 +223,13 @@ jobs:
           # The target cluster's public control-plane endpoint is IP-restricted
           # (master-authorized-networks). Reach it via Connect Gateway instead of
           # the public endpoint. The cluster must be fleet-registered and the SA
-          # (gha-tack-gke-deployer) needs BOTH roles/gkehub.gatewayEditor AND
-          # roles/gkehub.viewer — the latter grants gkehub.memberships.list, which
-          # get-gke-credentials uses to auto-discover the membership (else it 403s
-          # here). Both are granted.
+          # (gha-tack-gke-deployer) has roles/gkehub.gatewayEditor.
+          # fleet_membership_name is pinned explicitly: the membership is REGIONAL
+          # (locations/<region>), but auto-discovery only checks the global
+          # location and fails with "expected one membership ... Found none".
+          # Membership name == cluster name (registered via --fleet-project).
           use_connect_gateway: "true"
+          fleet_membership_name: projects/${{ vars.GCP_PROJECT_ID }}/locations/${{ vars.GKE_CLUSTER_LOCATION }}/memberships/${{ vars.GKE_CLUSTER_NAME }}
 
       # Note: a pre-flight `gcloud artifacts docker images describe` poll used to
       # live here (PR #51). It consistently reported "not yet present" for tags
