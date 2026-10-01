@@ -70,7 +70,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: [arc-runner-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
       name: production
