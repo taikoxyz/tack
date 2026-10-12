@@ -1,19 +1,17 @@
 # Tack
 
+> **⚠️ Sunset: this project is no longer maintained.**
+> Tack has been shut down by Taiko Labs. The hosted service is no longer operated or supported, and this repository is kept for reference only. No further updates or security fixes will be issued, so don't deploy it or pay any endpoint claiming to be Tack. Any remaining third-party deployment is not affiliated with or operated by Taiko Labs.
+
 **Storage for agents. Upload files or pin CIDs, pay per use — no account or API key required.**
 
 Tack is an IPFS pinning and retrieval service where payment *is* the authentication. No pinning API keys, no signup, no monthly plans. Send a request with a wallet, pay per-use via [x402](https://www.x402.org/) on Taiko or MPP on Tempo, and your content is pinned for as long as you paid for.
 
 Built for AI agents, developer tooling, and any machine that needs to store data on IPFS without a human creating an account first.
 
-## Live Endpoints
+## Endpoints
 
-| Endpoint | URL |
-|---|---|
-| API | `https://tack.inferenceroom.ai` |
-| Health | `GET /health` |
-| Agent Card (A2A) | `GET /.well-known/agent.json` |
-| IPFS Gateway | `GET /ipfs/<cid>` |
+The hosted endpoints (`tack.inferenceroom.ai`, `tack.taiko.xyz`) have been retired. The API shape below is documented for reference only.
 
 ## Quickstart
 
