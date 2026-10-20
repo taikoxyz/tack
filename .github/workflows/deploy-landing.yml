@@ -29,7 +29,7 @@ jobs:
   deploy-preview:
     name: Preview
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]' }}
-    runs-on: [arc-runner-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -80,7 +80,7 @@ jobs:
   deploy-production:
     name: Production
     if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
-    runs-on: [arc-runner-set]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
       name: production-landing
