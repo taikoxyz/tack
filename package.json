@@ -25,10 +25,10 @@
     "@x402/hono": "^2.6.0",
     "better-sqlite3": "^11.8.1",
     "hono": "^4.7.4",
-    "mppx": "^0.4.7",
+    "mppx": "^0.4.12",
     "pino": "^9.6.0",
     "ulid": "^3.0.2",
-    "viem": "^2.39.3"
+    "viem": "^2.57.10"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

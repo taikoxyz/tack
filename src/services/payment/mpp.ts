@@ -69,7 +69,7 @@ export function createMppInstance(options: CreateMppInstanceOptions) {
     secretKey,
     realm,
     methods: [
-      tempo({
+      tempo.charge({
         currency,
         recipient: payTo as `0x${string}`,
         testnet,

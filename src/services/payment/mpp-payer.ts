@@ -39,7 +39,8 @@ export interface TempoPayerContext {
  * don't have to fabricate the full viem receipt.
  */
 export interface TempoReceiptLike {
-  status: 'success' | 'reverted';
+  // `pending` is possible in newer viem receipt types; anything but `success` is rejected by the callers below.
+  status: 'success' | 'reverted' | 'pending';
   logs: TransactionReceipt['logs'];
 }
 
