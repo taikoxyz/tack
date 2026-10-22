@@ -7,6 +7,13 @@ Format:
 - Group notes in this order: `Added`, `Changed`, `Fixed`, `Docs`, `Security`.
 - Add a tagged section before pushing a release tag. The release workflow uses the matching section for GitHub Release notes.
 
+## [0.2.9](https://github.com/taikoxyz/tack/compare/v0.2.8...v0.2.9) (2026-10-22)
+
+
+### Docs
+
+* add sunset notice and retire endpoint table ([#68](https://github.com/taikoxyz/tack/issues/68)) ([968c40a](https://github.com/taikoxyz/tack/commit/968c40ac4229602d5178a1c81db6cb1e2f2ac9f5))
+
 ## [0.2.8](https://github.com/taikoxyz/tack/compare/v0.2.7...v0.2.8) (2026-06-01)
 
 
