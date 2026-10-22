@@ -42,8 +42,8 @@ jobs:
           file="ai-services/tack/values.yaml"
           branch="chore/tack-${version}"
 
-          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai/tack/api:)[^\"]+#\1${version}#" "$file"
-          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai/tack/kubo:)[^\"]+#\1${version}#" "$file"
+          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai-services/tack/api:)[^\"]+#\1${version}#" "$file"
+          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai-services/tack/kubo:)[^\"]+#\1${version}#" "$file"
 
           if git diff --quiet -- "$file"; then
             echo "Tack ${version} is already deployed in k8s-configs; nothing to do."
