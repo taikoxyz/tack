@@ -2,6 +2,10 @@ name: bump-k8s-configs
 
 # Argo CD (taikoxyz/k8s-configs, ai-services/) is the deployer. After a release's images are pushed,
 # open a PR that bumps the image tags there; merging that PR is the deploy.
+#
+# K8S_CONFIGS_TOKEN must be scoped to taikoxyz/k8s-configs only, with just Contents and Pull requests write.
+# Nothing untrusted reaches a step that has that token: the tag is validated first, in a job that only has the
+# default read-only GITHUB_TOKEN.
 on:
   workflow_run:
     workflows: ["Build and Push Docker Images"]
@@ -15,12 +19,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  bump:
-    # Tag builds only (head_branch is the tag name for tag pushes), and only if both images were pushed.
+  validate:
+    # Tag builds only (head_branch is the tag name for tag pushes).
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Validate release tag and producer run
+        id: check
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Only plain release tags. Rejects `vnext`, pre-releases and anything with shell/sed metacharacters.
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$TAG' is not a vMAJOR.MINOR.PATCH release tag; refusing to bump."
+            exit 1
+          fi
+
+          # The tag must still point at the commit that was built (no re-pointed or re-created tag).
+          sha="$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')"
+          type="$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')"
+          if [ "$type" = "tag" ]; then
+            sha="$(gh api "repos/${REPO}/git/tags/${sha}" --jq '.object.sha')"
+          fi
+          if [ "$sha" != "$HEAD_SHA" ]; then
+            echo "::error::Tag $TAG resolves to $sha, but the build ran on $HEAD_SHA."
+            exit 1
+          fi
+
+          # The build that produced these images must have pushed to the new registry. A rerun of a build from
+          # before the cutover pushed to the old registry, and a bump PR for it would reference missing images.
+          gh api "repos/${REPO}/contents/.github/workflows/docker.yml?ref=${HEAD_SHA}" --jq '.content' | base64 -d > /tmp/docker.yml
+          for image in api kubo; do
+            if ! grep -q "us-central1-docker.pkg.dev/taiko-ai-services/tack/${image}\$" /tmp/docker.yml; then
+              echo "::error::docker.yml at ${HEAD_SHA} does not push ${image} to the taiko-ai-services registry."
+              exit 1
+            fi
+          done
+
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+  bump:
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,19 +84,19 @@ jobs:
 
       - name: Bump image tags and open PR
         env:
-          TAG: ${{ github.event.workflow_run.head_branch }}
+          # Validated above as digits and dots only, so it is safe inside the sed expressions below.
+          VERSION: ${{ needs.validate.outputs.version }}
           GH_TOKEN: ${{ secrets.K8S_CONFIGS_TOKEN }}
         run: |
           set -euo pipefail
-          version="${TAG#v}"
           file="ai-services/tack/values.yaml"
-          branch="chore/tack-${version}"
+          branch="chore/tack-${VERSION}"
 
-          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai-services/tack/api:)[^\"]+#\1${version}#" "$file"
-          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai-services/tack/kubo:)[^\"]+#\1${version}#" "$file"
+          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai-services/tack/api:)[^\"]+#\1${VERSION}#" "$file"
+          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai-services/tack/kubo:)[^\"]+#\1${VERSION}#" "$file"
 
           if git diff --quiet -- "$file"; then
-            echo "Tack ${version} is already deployed in k8s-configs; nothing to do."
+            echo "Tack ${VERSION} is already deployed in k8s-configs; nothing to do."
             exit 0
           fi
 
@@ -54,12 +104,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add "$file"
-          git commit -m "chore(ai-services): bump tack to ${version}"
+          git commit -m "chore(ai-services): bump tack to ${VERSION}"
           git push --force-with-lease origin "$branch"
 
           gh pr create \
             --repo taikoxyz/k8s-configs \
             --base main \
             --head "$branch" \
-            --title "chore(ai-services): bump tack to ${version}" \
-            --body "Automated bump from taikoxyz/tack release ${TAG}. Merging deploys it through Argo CD (sync the tack Application if automated sync is still off). Verify with the verify-deploy workflow in taikoxyz/tack."
+            --title "chore(ai-services): bump tack to ${VERSION}" \
+            --body "Automated bump from taikoxyz/tack release v${VERSION}. Merging deploys it through Argo CD (sync the tack Application if automated sync is still off). Verify with the verify-deploy workflow in taikoxyz/tack."
