@@ -102,10 +102,19 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
+          # Safe to rerun after a partial failure: the branch is owned by this automation, so a rerun rebuilds it from
+          # main and overwrites whatever an earlier run left (a plain lease would fail on a stale remote branch),
+          # and the PR is only created if no open one exists for it yet.
+          git checkout -B "$branch"
           git add "$file"
           git commit -m "chore(ai-services): bump tack to ${VERSION}"
-          git push --force-with-lease origin "$branch"
+          git push --force origin "HEAD:refs/heads/${branch}"
+
+          existing="$(gh pr list --repo taikoxyz/k8s-configs --head "$branch" --state open --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "An open PR for ${branch} already exists; the branch was updated, nothing more to do."
+            exit 0
+          fi
 
           gh pr create \
             --repo taikoxyz/k8s-configs \
