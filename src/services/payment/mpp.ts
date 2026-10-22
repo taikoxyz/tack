@@ -1,4 +1,4 @@
-import { Mppx, tempo } from 'mppx/server';
+import { Mppx, tempo, type Store } from 'mppx/server';
 import { tempo as tempoChain, tempoModerato as tempoModeratoChain } from 'viem/chains';
 import type { MppChainContext } from './middleware.js';
 import { paymentEndpointForPath } from './types.js';
@@ -49,6 +49,13 @@ export interface CreateMppInstanceOptions {
   payTo: string;
   secretKey: string;
   /**
+   * Where mppx records transaction hashes it has already accepted. Required
+   * (no default) so replay protection can never silently fall back to
+   * mppx's process-local memory store, which is wiped on every restart.
+   * Use `createSqliteMppStore(db)` in production.
+   */
+  store: Store.Store;
+  /**
    * Server realm used in the `WWW-Authenticate` challenge. Set explicitly
    * to the public origin (e.g. `https://tack.example`) so that HMAC-bound
    * challenge IDs remain consistent across replicas and environments
@@ -62,7 +69,7 @@ export interface CreateMppInstanceOptions {
 }
 
 export function createMppInstance(options: CreateMppInstanceOptions) {
-  const { payTo, secretKey, realm, testnet = false } = options;
+  const { payTo, secretKey, store, realm, testnet = false } = options;
   const currency = testnet ? TEMPO_PATH_USD_TESTNET : TEMPO_USDC_E_MAINNET;
 
   return Mppx.create({
@@ -72,6 +79,7 @@ export function createMppInstance(options: CreateMppInstanceOptions) {
       tempo.charge({
         currency,
         recipient: payTo as `0x${string}`,
+        store: store as never,
         testnet,
       }),
     ],

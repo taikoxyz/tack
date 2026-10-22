@@ -8,6 +8,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { getConfig } from './config';
 import { createDb } from './db';
+import { createSqliteMppStore } from './services/payment/mpp-store.js';
 import { PinRepository } from './repositories/pin-repository';
 import { PrivateObjectRepository } from './repositories/private-object-repository';
 import { WalletAuthChallengeRepository } from './repositories/wallet-auth-challenge-repository';
@@ -187,6 +188,7 @@ const mppx = config.mppSecretKey
   ? createMppInstance({
       payTo: config.mppPayTo,
       secretKey: config.mppSecretKey,
+      store: createSqliteMppStore(db),
       realm: mppRealm,
       testnet: mppTestnet,
     })
@@ -207,6 +209,7 @@ const fetchTempoReceipt: FetchTempoReceipt | null = tempoPublicClient
       const receipt = await getTransactionReceipt(tempoPublicClient, { hash });
       return {
         status: receipt.status,
+        from: receipt.from,
         logs: receipt.logs,
       };
     }

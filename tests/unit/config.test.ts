@@ -76,6 +76,22 @@ describe('config validation', () => {
     expect(() => getConfig()).toThrow('X402_USDC_ASSET_ADDRESS must be a real token address');
   });
 
+  it('fails fast in production when MPP is enabled without PUBLIC_BASE_URL', () => {
+    setTestEnv({
+      NODE_ENV: 'production',
+      WALLET_AUTH_TOKEN_SECRET: '0123456789abcdef0123456789abcdef',
+      X402_NETWORK: 'eip155:167000',
+      X402_TAIKO_PAY_TO: realTaikoPayTo,
+      X402_BASE_PAY_TO: realBasePayTo,
+      X402_USDC_ASSET_ADDRESS: realUsdc,
+      MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef',
+      MPP_PAY_TO: realMppPayTo,
+      PUBLIC_BASE_URL: ''
+    });
+
+    expect(() => getConfig()).toThrow('PUBLIC_BASE_URL must be set when MPP is enabled');
+  });
+
   it('accepts explicit production x402 configuration', () => {
     setTestEnv({
       NODE_ENV: 'production',
@@ -85,7 +101,8 @@ describe('config validation', () => {
       X402_BASE_PAY_TO: realBasePayTo,
       X402_USDC_ASSET_ADDRESS: realUsdc,
       MPP_SECRET_KEY: '0123456789abcdef0123456789abcdef',
-      MPP_PAY_TO: realMppPayTo
+      MPP_PAY_TO: realMppPayTo,
+      PUBLIC_BASE_URL: 'https://tack.example'
     });
 
     const config = getConfig();
