@@ -200,6 +200,18 @@ describe('resolvePayerFromTransactionHash status and sender handling', () => {
     expect(payer).toBe(PAYER_REAL.toLowerCase());
   });
 
+  it('fails closed when no matching transfer was sent by the receipt sender', async () => {
+    const fetchReceipt = makeFetchReceipt(
+      [buildTransferLog({ address: TEMPO_CURRENCY, from: PAYER_OTHER, to: RECIPIENT, amount: 1000n })],
+      'success',
+      PAYER_REAL
+    );
+
+    await expect(resolvePayerFromTransactionHash(fetchReceipt, TX_HASH, context)).rejects.toThrow(
+      /No matching TIP-20 Transfer event/
+    );
+  });
+
   it('keeps working when the receipt carries no sender', async () => {
     const fetchReceipt = makeFetchReceipt([
       buildTransferLog({ address: TEMPO_CURRENCY, from: PAYER_REAL, to: RECIPIENT, amount: 1000n }),

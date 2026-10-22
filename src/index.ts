@@ -37,7 +37,7 @@ import {
 } from './services/payment/mpp';
 import { BASE_CHAIN } from './services/payment/chains/base';
 import { createMppPaymentMiddleware } from './services/payment/middleware';
-import { createTempoPayerResolver, type FetchTempoReceipt } from './services/payment/mpp-payer';
+import { createTempoPayerResolver, extractReceiptHash, type FetchTempoReceipt } from './services/payment/mpp-payer';
 import { requireOwnerWalletFromHeaders } from './services/payment/owner-auth';
 import {
   calculatePriceUsd,
@@ -394,10 +394,18 @@ const mppMiddleware: MiddlewareHandler | undefined = mppx && fetchTempoReceipt
           };
         },
       }),
-      onPayerResolutionFailure: (error, request) => {
+      onPayerResolutionFailure: (error, request, withReceipt) => {
+        // The charge has settled and its hash is marked as used, so the customer cannot retry: the hash is what
+        // an operator needs to refund them by hand.
+        let txHash: string | undefined;
+        try {
+          txHash = extractReceiptHash(withReceipt);
+        } catch {
+          txHash = undefined;
+        }
         logger.error(
-          { err: error, url: request.url, method: request.method },
-          'mpp payer resolution failed after successful charge'
+          { err: error, url: request.url, method: request.method, txHash },
+          'mpp payer resolution failed after successful charge; manual refund may be needed'
         );
       },
     })
