@@ -8,6 +8,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { getConfig } from './config';
 import { createDb } from './db';
+import { createSqliteMppStore } from './services/payment/mpp-store.js';
 import { PinRepository } from './repositories/pin-repository';
 import { PrivateObjectRepository } from './repositories/private-object-repository';
 import { WalletAuthChallengeRepository } from './repositories/wallet-auth-challenge-repository';
@@ -36,7 +37,7 @@ import {
 } from './services/payment/mpp';
 import { BASE_CHAIN } from './services/payment/chains/base';
 import { createMppPaymentMiddleware } from './services/payment/middleware';
-import { createTempoPayerResolver, type FetchTempoReceipt } from './services/payment/mpp-payer';
+import { createTempoPayerResolver, extractReceiptHash, type FetchTempoReceipt } from './services/payment/mpp-payer';
 import { requireOwnerWalletFromHeaders } from './services/payment/owner-auth';
 import {
   calculatePriceUsd,
@@ -187,6 +188,7 @@ const mppx = config.mppSecretKey
   ? createMppInstance({
       payTo: config.mppPayTo,
       secretKey: config.mppSecretKey,
+      store: createSqliteMppStore(db),
       realm: mppRealm,
       testnet: mppTestnet,
     })
@@ -207,6 +209,7 @@ const fetchTempoReceipt: FetchTempoReceipt | null = tempoPublicClient
       const receipt = await getTransactionReceipt(tempoPublicClient, { hash });
       return {
         status: receipt.status,
+        from: receipt.from,
         logs: receipt.logs,
       };
     }
@@ -391,10 +394,18 @@ const mppMiddleware: MiddlewareHandler | undefined = mppx && fetchTempoReceipt
           };
         },
       }),
-      onPayerResolutionFailure: (error, request) => {
+      onPayerResolutionFailure: (error, request, withReceipt) => {
+        // The charge has settled and its hash is marked as used, so the customer cannot retry: the hash is what
+        // an operator needs to refund them by hand.
+        let txHash: string | undefined;
+        try {
+          txHash = extractReceiptHash(withReceipt);
+        } catch {
+          txHash = undefined;
+        }
         logger.error(
-          { err: error, url: request.url, method: request.method },
-          'mpp payer resolution failed after successful charge'
+          { err: error, url: request.url, method: request.method, txHash },
+          'mpp payer resolution failed after successful charge; manual refund may be needed'
         );
       },
     })

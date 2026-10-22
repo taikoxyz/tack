@@ -206,6 +206,11 @@ function validateProductionConfig(config: AppConfig): void {
     if (isPlaceholderEvmAddress(config.mppPayTo)) {
       throw new Error('Invalid production configuration: MPP_PAY_TO must be a real wallet address when MPP is enabled');
     }
+    // The MPP challenge realm is derived from PUBLIC_BASE_URL. Without it mppx falls back to the request
+    // hostname, which can differ across proxies and deploys and invalidates challenges already handed out.
+    if (!config.publicBaseUrl) {
+      throw new Error('Invalid production configuration: PUBLIC_BASE_URL must be set when MPP is enabled');
+    }
   }
 }
 

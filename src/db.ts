@@ -172,5 +172,15 @@ export function createDb(dbPath: string): Database.Database {
   }
   // idx_pins_size_bytes intentionally omitted: no query filters by size_bytes alone (only SUM)
 
+  // mppx replay protection: Tempo transaction hashes already used to pay (see services/payment/mpp-store.ts).
+  // Kept forever on purpose: a hash must never become valid again.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mppx_seen_hashes (
+      key     TEXT PRIMARY KEY,
+      value   TEXT NOT NULL,
+      created TEXT NOT NULL
+    );
+  `);
+
   return db;
 }

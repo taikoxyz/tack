@@ -51,7 +51,11 @@ interface MppPaymentMiddlewareConfig {
   resolveVerifiedPayer: ResolveVerifiedPayer;
   chainContext: MppChainContext;
   /** Optional logger hook for payer-resolution failures. */
-  onPayerResolutionFailure?: (error: unknown, request: Request) => void;
+  onPayerResolutionFailure?: (
+    error: unknown,
+    request: Request,
+    withReceipt: (response: Response) => Response
+  ) => void;
 }
 
 const PROBLEM_JSON_CONTENT_TYPE = 'application/problem+json';
@@ -108,7 +112,7 @@ export function createMppPaymentMiddleware(config: MppPaymentMiddlewareConfig): 
     try {
       wallet = await resolveVerifiedPayer(c.req.raw, result.withReceipt);
     } catch (error) {
-      onPayerResolutionFailure?.(error, c.req.raw);
+      onPayerResolutionFailure?.(error, c.req.raw, result.withReceipt);
       return payerResolutionFailedResponse();
     }
 
