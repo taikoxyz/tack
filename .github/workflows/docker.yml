@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v6
 
       # Keyless: GitHub OIDC -> Workload Identity Federation -> github-image-push SA
-      # (taiko-infra-mono terraform/taiko-ai/iam). The pool only trusts taikoxyz/tack.
+      # (taiko-infra-mono terraform/taiko-ai-services/iam). The pool only trusts taikoxyz/tack.
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v3
@@ -76,7 +76,7 @@ jobs:
         uses: actions/checkout@v6
 
       # Keyless: GitHub OIDC -> Workload Identity Federation -> github-image-push SA
-      # (taiko-infra-mono terraform/taiko-ai/iam). The pool only trusts taikoxyz/tack.
+      # (taiko-infra-mono terraform/taiko-ai-services/iam). The pool only trusts taikoxyz/tack.
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v3
