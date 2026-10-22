@@ -1,0 +1,44 @@
+name: verify-deploy
+
+# Argo CD deploys asynchronously, so this is a separate, manual check instead of a deploy step.
+# Run it after the k8s-configs bump PR is merged and the `tack` Application is synced.
+# The paid x402 check lives in x402-taiko-smoke.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Public Tack base URL"
+        required: false
+        default: "https://tack.inferenceroom.ai"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for /health and the agent card
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+        run: |
+          set -euo pipefail
+          base_url="${API_BASE_URL%/}"
+
+          for path in /health /.well-known/agent.json; do
+            for attempt in {1..20}; do
+              status_code="$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' "$base_url$path" || true)"
+              if [ "$status_code" = "200" ]; then
+                echo "$path ok"
+                break
+              fi
+              echo "$path attempt $attempt/20 returned $status_code"
+              if [ "$attempt" = 20 ]; then
+                echo "::error::$path did not return 200"
+                exit 1
+              fi
+              sleep 15
+            done
+          done

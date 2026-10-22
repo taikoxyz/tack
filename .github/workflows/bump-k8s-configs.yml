@@ -1,0 +1,65 @@
+name: bump-k8s-configs
+
+# Argo CD (taikoxyz/k8s-configs, ai-services/) is the deployer. After a release's images are pushed,
+# open a PR that bumps the image tags there; merging that PR is the deploy.
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Images"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bump-k8s-configs-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    # Tag builds only (head_branch is the tag name for tag pushes), and only if both images were pushed.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout k8s-configs
+        uses: actions/checkout@v6
+        with:
+          repository: taikoxyz/k8s-configs
+          ref: main
+          token: ${{ secrets.K8S_CONFIGS_TOKEN }}
+          persist-credentials: true
+
+      - name: Bump image tags and open PR
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          GH_TOKEN: ${{ secrets.K8S_CONFIGS_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          file="ai-services/tack/values.yaml"
+          branch="chore/tack-${version}"
+
+          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai/tack/api:)[^\"]+#\1${version}#" "$file"
+          sed -E -i "s#(us-central1-docker.pkg.dev/taiko-ai/tack/kubo:)[^\"]+#\1${version}#" "$file"
+
+          if git diff --quiet -- "$file"; then
+            echo "Tack ${version} is already deployed in k8s-configs; nothing to do."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add "$file"
+          git commit -m "chore(ai-services): bump tack to ${version}"
+          git push --force-with-lease origin "$branch"
+
+          gh pr create \
+            --repo taikoxyz/k8s-configs \
+            --base main \
+            --head "$branch" \
+            --title "chore(ai-services): bump tack to ${version}" \
+            --body "Automated bump from taikoxyz/tack release ${TAG}. Merging deploys it through Argo CD (sync the tack Application if automated sync is still off). Verify with the verify-deploy workflow in taikoxyz/tack."
