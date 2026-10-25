@@ -39,7 +39,14 @@ export interface TempoPayerContext {
  * don't have to fabricate the full viem receipt.
  */
 export interface TempoReceiptLike {
-  status: 'success' | 'reverted';
+  // `pending` is possible in newer viem receipt types; anything but `success` is rejected by the callers below.
+  status: 'success' | 'reverted' | 'pending';
+  /**
+   * Transaction sender. When present, only a Transfer event sent by this
+   * address can identify the payer, mirroring the sender check mppx itself
+   * applies to the charge.
+   */
+  from?: `0x${string}`;
   logs: TransactionReceipt['logs'];
 }
 
@@ -99,7 +106,7 @@ export async function resolvePayerFromTransactionHash(
   const expectedAmount = BigInt(context.amount);
 
   const candidates = [...transferLogs, ...memoLogs];
-  const match = candidates.find((log) => {
+  const matches = candidates.filter((log) => {
     const args = log.args as { from: `0x${string}`; to: `0x${string}`; amount: bigint };
     return (
       isAddressEqual(log.address, context.currency) &&
@@ -107,6 +114,13 @@ export async function resolvePayerFromTransactionHash(
       args.amount === expectedAmount
     );
   });
+  // mppx only accepts a charge whose transfer was sent by the transaction sender, so when the receipt tells us the
+  // sender, the payer MUST be that address. Do not fall back to another matching event: it would be a payer mppx
+  // never verified. Callers that cannot supply `from` keep the first-match behaviour.
+  const sender = receipt.from;
+  const match = sender
+    ? matches.find((log) => isAddressEqual((log.args as { from: `0x${string}` }).from, sender))
+    : matches[0];
 
   if (!match) {
     throw new Error(

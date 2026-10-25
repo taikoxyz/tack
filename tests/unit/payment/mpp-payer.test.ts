@@ -46,11 +46,12 @@ function buildTransferLog(overrides: {
 
 function makeFetchReceipt(
   logs: Log[],
-  status: 'success' | 'reverted' = 'success'
+  status: 'success' | 'reverted' | 'pending' = 'success',
+  from?: `0x${string}`
 ): FetchTempoReceipt {
   return vi.fn((hash: `0x${string}`) => {
     expect(hash).toBe(TX_HASH);
-    const receipt: TempoReceiptLike = { status, logs };
+    const receipt: TempoReceiptLike = { status, logs, from };
     return Promise.resolve(receipt);
   });
 }
@@ -173,6 +174,51 @@ describe('resolvePayerFromTransactionHash', () => {
     await expect(resolvePayerFromTransactionHash(fetchReceipt, TX_HASH, context)).rejects.toThrow(
       /did not succeed on-chain/
     );
+  });
+});
+
+describe('resolvePayerFromTransactionHash status and sender handling', () => {
+  it('rejects a pending receipt', async () => {
+    const fetchReceipt = makeFetchReceipt([], 'pending');
+
+    await expect(resolvePayerFromTransactionHash(fetchReceipt, TX_HASH, context)).rejects.toThrow(
+      /did not succeed on-chain/
+    );
+  });
+
+  it('prefers the matching transfer sent by the transaction sender', async () => {
+    const fetchReceipt = makeFetchReceipt(
+      [
+        buildTransferLog({ address: TEMPO_CURRENCY, from: PAYER_OTHER, to: RECIPIENT, amount: 1000n }),
+        buildTransferLog({ address: TEMPO_CURRENCY, from: PAYER_REAL, to: RECIPIENT, amount: 1000n }),
+      ],
+      'success',
+      PAYER_REAL
+    );
+
+    const payer = await resolvePayerFromTransactionHash(fetchReceipt, TX_HASH, context);
+    expect(payer).toBe(PAYER_REAL.toLowerCase());
+  });
+
+  it('fails closed when no matching transfer was sent by the receipt sender', async () => {
+    const fetchReceipt = makeFetchReceipt(
+      [buildTransferLog({ address: TEMPO_CURRENCY, from: PAYER_OTHER, to: RECIPIENT, amount: 1000n })],
+      'success',
+      PAYER_REAL
+    );
+
+    await expect(resolvePayerFromTransactionHash(fetchReceipt, TX_HASH, context)).rejects.toThrow(
+      /No matching TIP-20 Transfer event/
+    );
+  });
+
+  it('keeps working when the receipt carries no sender', async () => {
+    const fetchReceipt = makeFetchReceipt([
+      buildTransferLog({ address: TEMPO_CURRENCY, from: PAYER_REAL, to: RECIPIENT, amount: 1000n }),
+    ]);
+
+    const payer = await resolvePayerFromTransactionHash(fetchReceipt, TX_HASH, context);
+    expect(payer).toBe(PAYER_REAL.toLowerCase());
   });
 });
 
