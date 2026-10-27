@@ -7,6 +7,18 @@ Format:
 - Group notes in this order: `Added`, `Changed`, `Fixed`, `Docs`, `Security`.
 - Add a tagged section before pushing a release tag. The release workflow uses the matching section for GitHub Release notes.
 
+## [0.2.9](https://github.com/taikoxyz/tack/compare/v0.2.8...v0.2.9) (2026-10-27)
+
+
+### Fixed
+
+* **deps:** bump mppx to 0.4.12 and use the Tempo charge method directly ([#72](https://github.com/taikoxyz/tack/issues/72)) ([9856a5c](https://github.com/taikoxyz/tack/commit/9856a5cc7cfe7d34d552bef9a5e52ddcd26e020b))
+
+
+### Docs
+
+* add sunset notice and retire endpoint table ([#68](https://github.com/taikoxyz/tack/issues/68)) ([968c40a](https://github.com/taikoxyz/tack/commit/968c40ac4229602d5178a1c81db6cb1e2f2ac9f5))
+
 ## [0.2.8](https://github.com/taikoxyz/tack/compare/v0.2.7...v0.2.8) (2026-06-01)
 
 
